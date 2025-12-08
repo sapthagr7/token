@@ -1,0 +1,257 @@
+Build me a fully off-chain RWA (Real-World Asset) tokenization and trading platform using Node.js + Express + PostgreSQL + React.
+This platform should NOT use blockchain, NOT use Polygon, and NOT deploy ERC-3643 on-chain — it should only follow ERC-3643-like compliance logic internally (KYC, permissions, identity-linked accounts).
+The system should mimic tokenization logic but store all states in the database.
+
+🎯 SYSTEM OVERVIEW
+
+Build:
+
+Backend: Node.js + Express + PostgreSQL (Prisma ORM)
+
+Frontend: React + Tailwind
+
+Authentication: JWT + Role-based access
+
+Asset Management: CRUD assets (properties, commodities, loans)
+
+Tokenization: Mint internal “tokens” representing fractions of assets
+
+Compliance Rules:
+
+Each investor must have KYC-approved profile
+
+Transfers only allowed between verified users
+
+Admin can freeze/unfreeze accounts
+
+Admin can revoke tokens
+
+Secondary Market: Peer-to-peer trading inside the platform
+
+Audit Trail: Every transfer must be logged (like on-chain events)
+
+No blockchain. No wallet. No on-chain fees. Everything stored in PostgreSQL.
+
+📌 DATABASE STRUCTURE REQUIRED
+
+Create PostgreSQL tables:
+
+users
+
+id
+
+name
+
+email
+
+passwordHash
+
+role (ADMIN / INVESTOR)
+
+kycStatus (PENDING / APPROVED / REJECTED)
+
+isFrozen (boolean)
+
+createdAt
+
+assets
+
+id
+
+type (real_estate / commodity / loan)
+
+title
+
+description
+
+totalSupply (integer)
+
+remainingSupply
+
+navPrice
+
+createdAt
+
+tokens
+
+id
+
+assetId
+
+ownerId
+
+amount
+
+frozen (boolean)
+
+orders (for secondary market)
+
+id
+
+sellerId
+
+buyerId (nullable)
+
+assetId
+
+tokenAmount
+
+pricePerToken
+
+status (OPEN / FILLED / CANCELLED)
+
+createdAt
+
+transfers
+
+id
+
+assetId
+
+fromUser
+
+toUser
+
+tokenAmount
+
+timestamp
+
+reason (TRANSFER / FREEZE / UNFREEZE / ADMIN_REVOKE)
+
+📌 BACKEND ENDPOINTS TO GENERATE
+Auth
+
+POST /auth/register
+
+POST /auth/login
+
+GET /users/me
+
+KYC + Admin
+
+GET /admin/users
+
+POST /admin/users/:id/approve
+
+POST /admin/users/:id/reject
+
+POST /admin/users/:id/freeze
+
+POST /admin/users/:id/unfreeze
+
+Assets
+
+POST /assets
+
+GET /assets
+
+GET /assets/:id
+
+PUT /assets/:id
+
+Tokenization (off-chain)
+
+POST /tokens/mint
+
+POST /tokens/revoke
+
+GET /tokens/user/:id
+
+Transfers
+
+POST /tokens/transfer (respect compliance rules)
+
+Secondary Market
+
+POST /marketplace/order
+
+POST /marketplace/order/:id/fill
+
+POST /marketplace/order/:id/cancel
+
+GET /marketplace/orders
+
+📌 COMPLIANCE RULES TO IMPLEMENT
+
+When minting, transferring, or trading tokens:
+
+Both parties must be KYC APPROVED
+
+Both parties must be not frozen
+
+Seller must own enough tokens
+
+Admin can block any user or revoke tokens
+
+Transfers must be logged in audit table
+
+No public blockchain interactions
+
+This should replicate ERC-3643 logic off-chain.
+
+📌 FRONTEND PAGES
+Public
+
+Login
+
+Register
+
+Dashboard
+
+Investor Pages
+
+My Portfolio (tokens owned)
+
+Marketplace (buy/sell UI)
+
+KYC status page
+
+Admin Pages
+
+All Users (approve/reject KYC)
+
+Freeze/unfreeze users
+
+Create Asset
+
+Manage Asset
+
+Mint/Revoke Tokens
+
+View Audit Logs
+
+Use Tailwind, clean UI, and fetch data from Express API.
+
+📌 DELIVERABLES
+
+Ask Replit AI to generate:
+
+✔ Full backend folder structure
+✔ Prisma schema + migrations
+✔ REST API controllers
+✔ Middleware (auth, roles, compliance checks)
+✔ React frontend with forms + tables
+✔ Simple state management (Context or Zustand)
+✔ Fully working secondary market logic
+✔ Dummy seed data
+✔ Instructions to run the project
+
+📌 NON-REQUIREMENTS
+
+DO NOT include:
+
+Smart contracts
+
+Blockchain
+
+Web3 wallets
+
+MetaMask
+
+RPCs
+
+Polygon
+
+On-chain ERC-3643 tokens
+
+Everything must be off-chain simulation only.
