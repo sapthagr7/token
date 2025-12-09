@@ -364,7 +364,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Insufficient token balance" });
       }
 
-      await storage.updateTokenAmount(token.id, token.amount - tokenAmount);
+      const existingCostBasis = parseFloat(token.costBasis) || 0;
+      const costBasisPerToken = token.amount > 0 ? existingCostBasis / token.amount : 0;
+      const newCostBasis = (costBasisPerToken * (token.amount - tokenAmount)).toFixed(2);
+      await storage.updateTokenCostBasis(token.id, newCostBasis, token.amount - tokenAmount);
 
       const order = await storage.createOrder({
         sellerId: req.user.id,
@@ -457,11 +460,16 @@ export async function registerRoutes(
       if (order.status !== "OPEN") return res.status(400).json({ error: "Order is not open" });
       if (order.sellerId !== req.user.id) return res.status(403).json({ error: "Not your order" });
 
+      const asset = await storage.getAsset(order.assetId);
+      const returnedCostBasis = (parseFloat(asset?.navPrice || "0") * order.tokenAmount).toFixed(2);
+      
       let token = await storage.getTokenByAssetAndUser(order.assetId, req.user.id);
       if (token) {
-        await storage.updateTokenAmount(token.id, token.amount + order.tokenAmount);
+        const existingCostBasis = parseFloat(token.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(returnedCostBasis)).toFixed(2);
+        await storage.updateTokenCostBasis(token.id, newCostBasis, token.amount + order.tokenAmount);
       } else {
-        await storage.createToken(order.assetId, req.user.id, order.tokenAmount);
+        await storage.createToken(order.assetId, req.user.id, order.tokenAmount, returnedCostBasis);
       }
 
       await storage.updateOrderStatus(order.id, "CANCELLED");
