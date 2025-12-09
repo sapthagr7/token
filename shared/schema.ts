@@ -7,6 +7,8 @@ export const userRoleEnum = pgEnum("user_role", ["ADMIN", "INVESTOR"]);
 export const kycStatusEnum = pgEnum("kyc_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const assetTypeEnum = pgEnum("asset_type", ["real_estate", "commodity", "loan"]);
 export const orderStatusEnum = pgEnum("order_status", ["OPEN", "FILLED", "CANCELLED"]);
+export const orderApprovalStatusEnum = pgEnum("order_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
+export const tokenRequestStatusEnum = pgEnum("token_request_status", ["PENDING", "APPROVED", "REJECTED"]);
 export const transferReasonEnum = pgEnum("transfer_reason", ["TRANSFER", "MINT", "FREEZE", "UNFREEZE", "ADMIN_REVOKE", "TRADE"]);
 
 export const users = pgTable("users", {
@@ -48,6 +50,7 @@ export const orders = pgTable("orders", {
   tokenAmount: integer("token_amount").notNull(),
   pricePerToken: decimal("price_per_token", { precision: 18, scale: 2 }).notNull(),
   status: orderStatusEnum("status").notNull().default("OPEN"),
+  approvalStatus: orderApprovalStatusEnum("approval_status").notNull().default("PENDING"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -137,7 +140,7 @@ export const navHistoryRelations = relations(navHistory, ({ one }) => ({
   asset: one(assets, { fields: [navHistory.assetId], references: [assets.id] }),
 }));
 
-export const notificationTypeEnum = pgEnum("notification_type", ["KYC_STATUS", "ORDER_FILLED", "TRANSFER", "ACCOUNT_STATUS", "TOKEN_REVOKED"]);
+export const notificationTypeEnum = pgEnum("notification_type", ["KYC_STATUS", "ORDER_FILLED", "TRANSFER", "ACCOUNT_STATUS", "TOKEN_REVOKED", "ORDER_APPROVAL", "TOKEN_REQUEST", "NAV_UPDATE"]);
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -151,6 +154,22 @@ export const notifications = pgTable("notifications", {
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
   user: one(users, { fields: [notifications.userId], references: [users.id] }),
+}));
+
+export const tokenRequests = pgTable("token_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  amount: integer("amount").notNull(),
+  status: tokenRequestStatusEnum("status").notNull().default("PENDING"),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const tokenRequestsRelations = relations(tokenRequests, ({ one }) => ({
+  user: one(users, { fields: [tokenRequests.userId], references: [users.id] }),
+  asset: one(assets, { fields: [tokenRequests.assetId], references: [assets.id] }),
 }));
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -189,6 +208,15 @@ export const insertOrderSchema = createInsertSchema(orders).omit({
   createdAt: true,
   buyerId: true,
   status: true,
+  approvalStatus: true,
+});
+
+export const insertTokenRequestSchema = createInsertSchema(tokenRequests).omit({
+  id: true,
+  status: true,
+  adminNotes: true,
+  createdAt: true,
+  resolvedAt: true,
 });
 
 export const mintTokensSchema = z.object({
@@ -216,8 +244,11 @@ export type PriceHistory = typeof priceHistory.$inferSelect;
 export type KycDocument = typeof kycDocuments.$inferSelect;
 export type NavHistory = typeof navHistory.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type TokenRequest = typeof tokenRequests.$inferSelect;
+export type InsertTokenRequest = z.infer<typeof insertTokenRequestSchema>;
 
 export type UserWithTokens = User & { tokens: (Token & { asset: Asset })[] };
 export type OrderWithDetails = Order & { seller: User; buyer?: User; asset: Asset };
 export type TransferWithDetails = Transfer & { asset: Asset; fromUser?: User; toUser?: User };
 export type PriceHistoryWithAsset = PriceHistory & { asset: Asset };
+export type TokenRequestWithDetails = TokenRequest & { user: User; asset: Asset };

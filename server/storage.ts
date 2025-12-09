@@ -1,7 +1,7 @@
 import { 
-  users, assets, tokens, orders, transfers, priceHistory, kycDocuments, navHistory, notifications,
+  users, assets, tokens, orders, transfers, priceHistory, kycDocuments, navHistory, notifications, tokenRequests,
   type User, type InsertUser, type Asset, type InsertAsset,
-  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory, type Notification
+  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory, type Notification, type TokenRequest, type InsertTokenRequest
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
@@ -32,9 +32,12 @@ export interface IStorage {
   
   getOrder(id: string): Promise<Order | undefined>;
   getOpenOrders(): Promise<(Order & { seller: User; asset: Asset })[]>;
+  getApprovedOpenOrders(): Promise<(Order & { seller: User; asset: Asset })[]>;
+  getPendingApprovalOrders(): Promise<(Order & { seller: User; asset: Asset })[]>;
   getOrdersByUser(userId: string): Promise<(Order & { asset: Asset })[]>;
   createOrder(order: InsertOrder): Promise<Order>;
   updateOrderStatus(id: string, status: "OPEN" | "FILLED" | "CANCELLED", buyerId?: string): Promise<Order | undefined>;
+  updateOrderApprovalStatus(id: string, approvalStatus: "PENDING" | "APPROVED" | "REJECTED"): Promise<Order | undefined>;
   
   getTransfers(limit?: number): Promise<(Transfer & { asset: Asset; fromUser?: User; toUser?: User })[]>;
   createTransfer(transfer: Omit<Transfer, "id" | "timestamp">): Promise<Transfer>;
@@ -72,6 +75,12 @@ export interface IStorage {
   createNotification(userId: string, type: string, title: string, message: string): Promise<Notification>;
   markNotificationRead(id: string): Promise<Notification | undefined>;
   markAllNotificationsRead(userId: string): Promise<void>;
+  
+  // Token Requests
+  getTokenRequests(userId?: string): Promise<(TokenRequest & { user: User; asset: Asset })[]>;
+  getPendingTokenRequests(): Promise<(TokenRequest & { user: User; asset: Asset })[]>;
+  createTokenRequest(request: InsertTokenRequest): Promise<TokenRequest>;
+  updateTokenRequestStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", adminNotes?: string): Promise<TokenRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -306,6 +315,47 @@ export class DatabaseStorage implements IStorage {
     const [order] = await db
       .update(orders)
       .set(updateData)
+      .where(eq(orders.id, id))
+      .returning();
+    return order || undefined;
+  }
+
+  async getApprovedOpenOrders(): Promise<(Order & { seller: User; asset: Asset })[]> {
+    const result = await db
+      .select()
+      .from(orders)
+      .innerJoin(users, eq(orders.sellerId, users.id))
+      .innerJoin(assets, eq(orders.assetId, assets.id))
+      .where(and(eq(orders.status, "OPEN"), eq(orders.approvalStatus, "APPROVED")))
+      .orderBy(desc(orders.createdAt));
+    
+    return result.map((row) => ({
+      ...row.orders,
+      seller: row.users,
+      asset: row.assets,
+    }));
+  }
+
+  async getPendingApprovalOrders(): Promise<(Order & { seller: User; asset: Asset })[]> {
+    const result = await db
+      .select()
+      .from(orders)
+      .innerJoin(users, eq(orders.sellerId, users.id))
+      .innerJoin(assets, eq(orders.assetId, assets.id))
+      .where(and(eq(orders.status, "OPEN"), eq(orders.approvalStatus, "PENDING")))
+      .orderBy(desc(orders.createdAt));
+    
+    return result.map((row) => ({
+      ...row.orders,
+      seller: row.users,
+      asset: row.assets,
+    }));
+  }
+
+  async updateOrderApprovalStatus(id: string, approvalStatus: "PENDING" | "APPROVED" | "REJECTED"): Promise<Order | undefined> {
+    const [order] = await db
+      .update(orders)
+      .set({ approvalStatus })
       .where(eq(orders.id, id))
       .returning();
     return order || undefined;
@@ -594,6 +644,67 @@ export class DatabaseStorage implements IStorage {
       .update(notifications)
       .set({ read: true })
       .where(eq(notifications.userId, userId));
+  }
+
+  // Token Request methods
+  async getTokenRequests(userId?: string): Promise<(TokenRequest & { user: User; asset: Asset })[]> {
+    const baseQuery = db
+      .select()
+      .from(tokenRequests)
+      .innerJoin(users, eq(tokenRequests.userId, users.id))
+      .innerJoin(assets, eq(tokenRequests.assetId, assets.id));
+
+    const result = userId 
+      ? await baseQuery.where(eq(tokenRequests.userId, userId)).orderBy(desc(tokenRequests.createdAt))
+      : await baseQuery.orderBy(desc(tokenRequests.createdAt));
+    
+    return result.map((row) => ({
+      ...row.token_requests,
+      user: row.users,
+      asset: row.assets,
+    }));
+  }
+
+  async getPendingTokenRequests(): Promise<(TokenRequest & { user: User; asset: Asset })[]> {
+    const result = await db
+      .select()
+      .from(tokenRequests)
+      .innerJoin(users, eq(tokenRequests.userId, users.id))
+      .innerJoin(assets, eq(tokenRequests.assetId, assets.id))
+      .where(eq(tokenRequests.status, "PENDING"))
+      .orderBy(desc(tokenRequests.createdAt));
+    
+    return result.map((row) => ({
+      ...row.token_requests,
+      user: row.users,
+      asset: row.assets,
+    }));
+  }
+
+  async createTokenRequest(request: InsertTokenRequest): Promise<TokenRequest> {
+    const [tokenRequest] = await db
+      .insert(tokenRequests)
+      .values({
+        userId: request.userId,
+        assetId: request.assetId,
+        amount: request.amount,
+        status: "PENDING",
+      })
+      .returning();
+    return tokenRequest;
+  }
+
+  async updateTokenRequestStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", adminNotes?: string): Promise<TokenRequest | undefined> {
+    const [tokenRequest] = await db
+      .update(tokenRequests)
+      .set({ 
+        status, 
+        adminNotes: adminNotes || null,
+        resolvedAt: new Date()
+      })
+      .where(eq(tokenRequests.id, id))
+      .returning();
+    return tokenRequest || undefined;
   }
 }
 
