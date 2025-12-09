@@ -4,6 +4,36 @@
 
 TokenVault is a fully off-chain Real-World Asset (RWA) tokenization and trading platform. It mimics blockchain tokenization logic but stores all states in PostgreSQL, eliminating the need for blockchain, wallets, or on-chain fees. The platform enables fractional ownership trading of real estate, commodities, and loans with enterprise-grade KYC compliance following ERC-3643-like identity and permission logic.
 
+## Recent Changes (December 2024)
+
+### Security Hardening
+- All admin endpoints properly gated with `adminMiddleware`
+- `/api/admin/transfers` endpoint is admin-only (no public transfer ledger access)
+- All reporting endpoints have proper authorization scoping
+- Privilege escalation prevention via `publicRegistrationSchema`
+
+### Advanced Marketplace Features
+- Price history tracking with interactive charts (Recharts)
+- Bid/ask spread display for each asset
+- Market data API with historical pricing
+
+### KYC Document System
+- Document upload with file validation
+- Admin review interface for documents
+- Status-based upload restrictions
+
+### Analytics & Reporting
+- NAV history tracking per asset
+- Performance metrics dashboard
+- CSV export for portfolio, tax, compliance reports
+- Investor reports: portfolio and tax summaries
+- Admin reports: transaction logs and compliance data
+
+### Real-time Notifications
+- In-app notification dropdown with bell icon
+- Unread count badge
+- Notification history with mark-as-read functionality
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
