@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
+import { format } from "date-fns";
 import {
   ArrowLeft,
   Building2,
@@ -12,6 +13,9 @@ import {
   Edit2,
   X,
   Check,
+  History,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +32,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Asset, Token, User as UserType } from "@shared/schema";
+import type { Asset, Token, User as UserType, NavHistory } from "@shared/schema";
 
 type TokenWithOwner = Token & { owner: UserType };
 
@@ -51,6 +55,12 @@ export default function AdminAssetEditPage() {
     enabled: !!id,
   });
 
+  const navHistoryKey = id ? `/api/analytics/asset/${id}/nav-history` : null;
+  const { data: navHistory } = useQuery<NavHistory[]>({
+    queryKey: [navHistoryKey],
+    enabled: !!id && !!navHistoryKey,
+  });
+
   const updateNavMutation = useMutation({
     mutationFn: async (data: { navPrice: string; reason: string }) => {
       return await apiRequest("POST", `/api/admin/assets/${id}/nav`, data);
@@ -59,6 +69,7 @@ export default function AdminAssetEditPage() {
       toast({ title: "Token value updated successfully" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/assets/${id}/tokens`] });
       queryClient.invalidateQueries({ queryKey: ["/api/assets"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/analytics/asset/${id}/nav-history`] });
       setNavPrice("");
       setReason("");
     },
@@ -246,6 +257,96 @@ export default function AdminAssetEditPage() {
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Token Value History
+            </CardTitle>
+            <CardDescription>
+              Historical record of all token value changes
+            </CardDescription>
+          </div>
+          {navHistory && navHistory.length > 0 && (
+            <Badge variant="secondary">{navHistory.length} entries</Badge>
+          )}
+        </CardHeader>
+        <CardContent>
+          {!navHistory || navHistory.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              No value history recorded yet.
+            </div>
+          ) : (
+            <div className="rounded-md border max-h-80 overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Price</TableHead>
+                    <TableHead>Change</TableHead>
+                    <TableHead>Reason</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {navHistory
+                    .slice()
+                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                    .map((entry, idx, arr) => {
+                      const currentPrice = parseFloat(entry.navPrice);
+                      const prevEntry = arr[idx + 1];
+                      const prevPrice = prevEntry ? parseFloat(prevEntry.navPrice) : currentPrice;
+                      const change = currentPrice - prevPrice;
+                      const changePercent = prevPrice > 0 ? (change / prevPrice) * 100 : 0;
+                      
+                      return (
+                        <TableRow key={entry.id} data-testid={`nav-history-row-${entry.id}`}>
+                          <TableCell className="text-sm">
+                            {format(new Date(entry.timestamp), "MMM d, yyyy HH:mm")}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            ${currentPrice.toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            {idx < arr.length - 1 && (
+                              <div className="flex items-center gap-1">
+                                {change > 0 ? (
+                                  <>
+                                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                    <span className="text-sm text-emerald-600">
+                                      +${change.toFixed(2)} (+{changePercent.toFixed(1)}%)
+                                    </span>
+                                  </>
+                                ) : change < 0 ? (
+                                  <>
+                                    <TrendingDown className="h-4 w-4 text-red-600" />
+                                    <span className="text-sm text-red-600">
+                                      ${change.toFixed(2)} ({changePercent.toFixed(1)}%)
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-sm text-muted-foreground">No change</span>
+                                )}
+                              </div>
+                            )}
+                            {idx === arr.length - 1 && (
+                              <Badge variant="outline" className="text-xs">Initial</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-48 truncate">
+                            {entry.reason || "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
