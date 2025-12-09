@@ -123,6 +123,19 @@ export const kycDocumentsRelations = relations(kycDocuments, ({ one }) => ({
   user: one(users, { fields: [kycDocuments.userId], references: [users.id] }),
 }));
 
+// NAV history for tracking asset value changes over time
+export const navHistory = pgTable("nav_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  navPrice: decimal("nav_price", { precision: 18, scale: 2 }).notNull(),
+  reason: text("reason"), // 'initial', 'revaluation', 'income_distribution'
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export const navHistoryRelations = relations(navHistory, ({ one }) => ({
+  asset: one(assets, { fields: [navHistory.assetId], references: [assets.id] }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -184,6 +197,7 @@ export type Transfer = typeof transfers.$inferSelect;
 
 export type PriceHistory = typeof priceHistory.$inferSelect;
 export type KycDocument = typeof kycDocuments.$inferSelect;
+export type NavHistory = typeof navHistory.$inferSelect;
 
 export type UserWithTokens = User & { tokens: (Token & { asset: Asset })[] };
 export type OrderWithDetails = Order & { seller: User; buyer?: User; asset: Asset };

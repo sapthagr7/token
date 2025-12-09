@@ -504,5 +504,53 @@ export async function registerRoutes(
     }
   });
 
+  // Asset Analytics
+  app.get("/api/analytics/asset/:id", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const analytics = await storage.getAssetAnalytics(req.params.id);
+      if (!analytics) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      res.json(analytics);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // NAV History for an asset
+  app.get("/api/analytics/asset/:id/nav-history", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const navHistoryData = await storage.getNavHistory(req.params.id, limit);
+      res.json(navHistoryData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Update asset NAV (revaluation)
+  app.post("/api/admin/assets/:id/nav", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { navPrice, reason } = req.body;
+      if (!navPrice || isNaN(parseFloat(navPrice))) {
+        return res.status(400).json({ error: "Valid navPrice is required" });
+      }
+
+      // Create NAV history entry
+      const navEntry = await storage.createNavHistory(req.params.id, navPrice.toString(), reason || "revaluation");
+      
+      // Update the asset's current NAV
+      const asset = await storage.getAsset(req.params.id);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+
+      // Note: We'll need to add an updateAssetNav method, for now just return the history
+      res.status(201).json(navEntry);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }

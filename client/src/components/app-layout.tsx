@@ -12,6 +12,7 @@ import {
   Menu,
   UserCircle,
   FileText,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,7 @@ const adminNavItems = [
   { href: "/admin/documents", label: "Documents", icon: FileText },
   { href: "/admin/assets", label: "Assets", icon: Package },
   { href: "/admin/tokens", label: "Tokens", icon: Coins },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/audit", label: "Audit Log", icon: History },
 ];
 

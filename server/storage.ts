@@ -1,7 +1,7 @@
 import { 
-  users, assets, tokens, orders, transfers, priceHistory, kycDocuments,
+  users, assets, tokens, orders, transfers, priceHistory, kycDocuments, navHistory,
   type User, type InsertUser, type Asset, type InsertAsset,
-  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument
+  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
@@ -48,6 +48,20 @@ export interface IStorage {
   getAllPendingDocuments(): Promise<(KycDocument & { user: User })[]>;
   createKycDocument(userId: string, documentType: string, fileName: string, fileData: string): Promise<KycDocument>;
   updateKycDocumentStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", reviewNotes?: string): Promise<KycDocument | undefined>;
+  
+  // NAV History
+  getNavHistory(assetId: string, limit?: number): Promise<NavHistory[]>;
+  createNavHistory(assetId: string, navPrice: string, reason?: string): Promise<NavHistory>;
+  getAssetAnalytics(assetId: string): Promise<{
+    asset: Asset;
+    currentNav: string;
+    navHistory: NavHistory[];
+    priceHistory: PriceHistory[];
+    totalTradeVolume: number;
+    totalTrades: number;
+    holdersCount: number;
+    supplyDistribution: { ownerId: string; amount: number }[];
+  } | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -421,6 +435,75 @@ export class DatabaseStorage implements IStorage {
       .where(eq(kycDocuments.id, id))
       .returning();
     return doc || undefined;
+  }
+
+  // NAV History methods
+  async getNavHistory(assetId: string, limit?: number): Promise<NavHistory[]> {
+    const query = db
+      .select()
+      .from(navHistory)
+      .where(eq(navHistory.assetId, assetId))
+      .orderBy(desc(navHistory.timestamp));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    return await query;
+  }
+
+  async createNavHistory(assetId: string, navPrice: string, reason?: string): Promise<NavHistory> {
+    const [entry] = await db
+      .insert(navHistory)
+      .values({ assetId, navPrice, reason })
+      .returning();
+    return entry;
+  }
+
+  async getAssetAnalytics(assetId: string): Promise<{
+    asset: Asset;
+    currentNav: string;
+    navHistory: NavHistory[];
+    priceHistory: PriceHistory[];
+    totalTradeVolume: number;
+    totalTrades: number;
+    holdersCount: number;
+    supplyDistribution: { ownerId: string; amount: number }[];
+  } | null> {
+    const asset = await this.getAsset(assetId);
+    if (!asset) return null;
+
+    const navHistoryData = await this.getNavHistory(assetId, 100);
+    const priceHistoryData = await this.getPriceHistory(assetId, 100);
+
+    // Total trade volume and count
+    const [volumeResult] = await db
+      .select({
+        totalVolume: sql<number>`coalesce(sum(${priceHistory.volume}), 0)::int`,
+        totalTrades: sql<number>`count(*)::int`,
+      })
+      .from(priceHistory)
+      .where(eq(priceHistory.assetId, assetId));
+
+    // Get holders count and distribution
+    const tokenHolders = await db
+      .select()
+      .from(tokens)
+      .where(eq(tokens.assetId, assetId));
+
+    const supplyDistribution = tokenHolders
+      .filter(t => t.amount > 0)
+      .map(t => ({ ownerId: t.ownerId, amount: t.amount }));
+
+    return {
+      asset,
+      currentNav: asset.navPrice,
+      navHistory: navHistoryData,
+      priceHistory: priceHistoryData,
+      totalTradeVolume: volumeResult?.totalVolume || 0,
+      totalTrades: volumeResult?.totalTrades || 0,
+      holdersCount: supplyDistribution.length,
+      supplyDistribution,
+    };
   }
 }
 
