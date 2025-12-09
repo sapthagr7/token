@@ -48,9 +48,11 @@ export default function AdminUserTransactionsPage() {
   const params = useParams<{ userId: string }>();
   const userId = params.userId;
 
+  const queryKey = userId ? `/api/admin/users/${userId}/transactions` : null;
+  
   const { data, isLoading } = useQuery<UserTransactionsResponse>({
-    queryKey: ["/api/admin/users", userId, "transactions"],
-    enabled: !!userId,
+    queryKey: [queryKey],
+    enabled: !!userId && !!queryKey,
   });
 
   if (isLoading) {
