@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { 
   Users, 
   Search, 
@@ -9,6 +10,7 @@ import {
   Unlock,
   Loader2,
   Filter,
+  History,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -270,6 +272,13 @@ export default function AdminUsersPage() {
                                 Freeze Account
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                              <Link href={`/admin/users/${user.id}/transactions`} data-testid={`menu-transactions-${user.id}`}>
+                                <History className="mr-2 h-4 w-4" />
+                                View Transactions
+                              </Link>
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

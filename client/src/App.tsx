@@ -20,6 +20,7 @@ import AdminAuditPage from "@/pages/admin-audit";
 import AdminDocumentsPage from "@/pages/admin-documents";
 import AdminAnalyticsPage from "@/pages/admin-analytics";
 import AdminAssetEditPage from "@/pages/admin-asset-edit";
+import AdminUserTransactionsPage from "@/pages/admin-user-transactions";
 import ReportsPage from "@/pages/reports";
 import AdminReportsPage from "@/pages/admin-reports";
 import MyTokensPage from "@/pages/my-tokens";
@@ -105,6 +106,10 @@ function Router() {
 
       <Route path="/admin/users">
         <ProtectedRoute component={AdminUsersPage} adminOnly />
+      </Route>
+      
+      <Route path="/admin/users/:userId/transactions">
+        <ProtectedRoute component={AdminUserTransactionsPage} adminOnly />
       </Route>
 
       <Route path="/admin/assets">

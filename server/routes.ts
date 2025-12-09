@@ -515,6 +515,20 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: View individual investor's transaction history
+  app.get("/api/admin/users/:userId/transactions", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(404).json({ error: "User not found" });
+      
+      const transfers = await storage.getTransfersByUser(userId);
+      res.json({ user: { id: user.id, name: user.name, email: user.email }, transfers });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Admin order approval management
   app.get("/api/admin/pending-orders", authMiddleware(storage), adminMiddleware, async (req, res) => {
     try {
