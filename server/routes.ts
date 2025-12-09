@@ -116,6 +116,15 @@ export async function registerRoutes(
     try {
       const user = await storage.updateUserKycStatus(req.params.id, "APPROVED");
       if (!user) return res.status(404).json({ error: "User not found" });
+      
+      // Send notification
+      await storage.createNotification(
+        user.id,
+        "KYC_STATUS",
+        "KYC Approved",
+        "Congratulations! Your KYC verification has been approved. You can now trade on the platform."
+      );
+      
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error: any) {
@@ -127,6 +136,15 @@ export async function registerRoutes(
     try {
       const user = await storage.updateUserKycStatus(req.params.id, "REJECTED");
       if (!user) return res.status(404).json({ error: "User not found" });
+      
+      // Send notification
+      await storage.createNotification(
+        user.id,
+        "KYC_STATUS",
+        "KYC Rejected",
+        "Your KYC verification was not approved. Please contact support for more information."
+      );
+      
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error: any) {
@@ -138,6 +156,15 @@ export async function registerRoutes(
     try {
       const user = await storage.updateUserFrozenStatus(req.params.id, true);
       if (!user) return res.status(404).json({ error: "User not found" });
+      
+      // Send notification
+      await storage.createNotification(
+        user.id,
+        "ACCOUNT_STATUS",
+        "Account Frozen",
+        "Your account has been frozen by an administrator. Please contact support for more information."
+      );
+      
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error: any) {
@@ -149,6 +176,15 @@ export async function registerRoutes(
     try {
       const user = await storage.updateUserFrozenStatus(req.params.id, false);
       if (!user) return res.status(404).json({ error: "User not found" });
+      
+      // Send notification
+      await storage.createNotification(
+        user.id,
+        "ACCOUNT_STATUS",
+        "Account Unfrozen",
+        "Your account has been unfrozen. You may now resume trading activities."
+      );
+      
       const { passwordHash: _, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
     } catch (error: any) {
@@ -380,6 +416,26 @@ export async function registerRoutes(
         order.id
       );
 
+      // Get asset info for notifications
+      const asset = await storage.getAsset(order.assetId);
+      const assetTitle = asset?.title || "Unknown Asset";
+
+      // Notify seller
+      await storage.createNotification(
+        order.sellerId,
+        "ORDER_FILLED",
+        "Order Filled",
+        `Your sell order for ${order.tokenAmount} tokens of ${assetTitle} has been filled at $${order.pricePerToken} per token.`
+      );
+
+      // Notify buyer
+      await storage.createNotification(
+        req.user.id,
+        "ORDER_FILLED",
+        "Purchase Complete",
+        `You have purchased ${order.tokenAmount} tokens of ${assetTitle} at $${order.pricePerToken} per token.`
+      );
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -499,6 +555,46 @@ export async function registerRoutes(
       
       const { fileData, ...docWithoutData } = document;
       res.json(docWithoutData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Notifications
+  app.get("/api/notifications", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const notificationsList = await storage.getNotifications(req.user!.id);
+      res.json(notificationsList);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const count = await storage.getUnreadNotificationCount(req.user!.id);
+      res.json({ count });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/notifications/:id/read", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const notification = await storage.markNotificationRead(req.params.id);
+      if (!notification) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/notifications/read-all", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      await storage.markAllNotificationsRead(req.user!.id);
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

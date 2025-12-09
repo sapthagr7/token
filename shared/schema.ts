@@ -136,6 +136,22 @@ export const navHistoryRelations = relations(navHistory, ({ one }) => ({
   asset: one(assets, { fields: [navHistory.assetId], references: [assets.id] }),
 }));
 
+export const notificationTypeEnum = pgEnum("notification_type", ["KYC_STATUS", "ORDER_FILLED", "TRANSFER", "ACCOUNT_STATUS", "TOKEN_REVOKED"]);
+
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: notificationTypeEnum("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  read: boolean("read").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -198,6 +214,7 @@ export type Transfer = typeof transfers.$inferSelect;
 export type PriceHistory = typeof priceHistory.$inferSelect;
 export type KycDocument = typeof kycDocuments.$inferSelect;
 export type NavHistory = typeof navHistory.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
 
 export type UserWithTokens = User & { tokens: (Token & { asset: Asset })[] };
 export type OrderWithDetails = Order & { seller: User; buyer?: User; asset: Asset };

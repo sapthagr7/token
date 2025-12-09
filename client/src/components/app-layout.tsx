@@ -27,6 +27,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { KycBadge, FrozenBadge, RoleBadge } from "@/components/status-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationsDropdown } from "@/components/notifications-dropdown";
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 
@@ -180,6 +181,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
 
             <div className="flex items-center gap-2">
+              <NotificationsDropdown />
               <ThemeToggle />
 
               <DropdownMenu>
