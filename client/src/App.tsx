@@ -17,6 +17,7 @@ import AdminUsersPage from "@/pages/admin-users";
 import AdminAssetsPage from "@/pages/admin-assets";
 import AdminTokensPage from "@/pages/admin-tokens";
 import AdminAuditPage from "@/pages/admin-audit";
+import AdminDocumentsPage from "@/pages/admin-documents";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ 
@@ -107,6 +108,10 @@ function Router() {
 
       <Route path="/admin/audit">
         <ProtectedRoute component={AdminAuditPage} adminOnly />
+      </Route>
+
+      <Route path="/admin/documents">
+        <ProtectedRoute component={AdminDocumentsPage} adminOnly />
       </Route>
 
       <Route component={NotFound} />

@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Menu,
   UserCircle,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ const investorNavItems = [
 const adminNavItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/documents", label: "Documents", icon: FileText },
   { href: "/admin/assets", label: "Assets", icon: Package },
   { href: "/admin/tokens", label: "Tokens", icon: Coins },
   { href: "/admin/audit", label: "Audit Log", icon: History },
