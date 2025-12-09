@@ -60,6 +60,29 @@ export const transfers = pgTable("transfers", {
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
+// Price history for tracking trade prices over time
+export const priceHistory = pgTable("price_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  price: decimal("price", { precision: 18, scale: 2 }).notNull(),
+  volume: integer("volume").notNull(),
+  orderId: varchar("order_id").references(() => orders.id),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+// KYC Documents for verification
+export const kycDocuments = pgTable("kyc_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  documentType: text("document_type").notNull(), // 'id', 'proof_of_address'
+  fileName: text("file_name").notNull(),
+  fileData: text("file_data").notNull(), // Base64 encoded
+  status: kycStatusEnum("status").notNull().default("PENDING"),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+});
+
 export const usersRelations = relations(users, ({ many }) => ({
   tokens: many(tokens),
   sellOrders: many(orders, { relationName: "seller" }),
@@ -89,6 +112,15 @@ export const transfersRelations = relations(transfers, ({ one }) => ({
   asset: one(assets, { fields: [transfers.assetId], references: [assets.id] }),
   fromUser: one(users, { fields: [transfers.fromUserId], references: [users.id], relationName: "fromUser" }),
   toUser: one(users, { fields: [transfers.toUserId], references: [users.id], relationName: "toUser" }),
+}));
+
+export const priceHistoryRelations = relations(priceHistory, ({ one }) => ({
+  asset: one(assets, { fields: [priceHistory.assetId], references: [assets.id] }),
+  order: one(orders, { fields: [priceHistory.orderId], references: [orders.id] }),
+}));
+
+export const kycDocumentsRelations = relations(kycDocuments, ({ one }) => ({
+  user: one(users, { fields: [kycDocuments.userId], references: [users.id] }),
 }));
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -150,6 +182,10 @@ export type Order = typeof orders.$inferSelect;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Transfer = typeof transfers.$inferSelect;
 
+export type PriceHistory = typeof priceHistory.$inferSelect;
+export type KycDocument = typeof kycDocuments.$inferSelect;
+
 export type UserWithTokens = User & { tokens: (Token & { asset: Asset })[] };
 export type OrderWithDetails = Order & { seller: User; buyer?: User; asset: Asset };
 export type TransferWithDetails = Transfer & { asset: Asset; fromUser?: User; toUser?: User };
+export type PriceHistoryWithAsset = PriceHistory & { asset: Asset };

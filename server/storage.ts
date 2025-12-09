@@ -1,10 +1,10 @@
 import { 
-  users, assets, tokens, orders, transfers,
+  users, assets, tokens, orders, transfers, priceHistory, kycDocuments,
   type User, type InsertUser, type Asset, type InsertAsset,
-  type Token, type Order, type InsertOrder, type Transfer
+  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -37,6 +37,17 @@ export interface IStorage {
   createTransfer(transfer: Omit<Transfer, "id" | "timestamp">): Promise<Transfer>;
   
   getStats(): Promise<{ totalUsers: number; pendingKyc: number; totalAssets: number; totalTokensMinted: number }>;
+  
+  // Price history
+  getPriceHistory(assetId: string, limit?: number): Promise<PriceHistory[]>;
+  createPriceHistory(assetId: string, price: string, volume: number, orderId?: string): Promise<PriceHistory>;
+  getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number }[]>;
+  
+  // KYC Documents
+  getKycDocuments(userId: string): Promise<KycDocument[]>;
+  getAllPendingDocuments(): Promise<(KycDocument & { user: User })[]>;
+  createKycDocument(userId: string, documentType: string, fileName: string, fileData: string): Promise<KycDocument>;
+  updateKycDocumentStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", reviewNotes?: string): Promise<KycDocument | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -301,6 +312,115 @@ export class DatabaseStorage implements IStorage {
       totalAssets: assetStats?.total || 0,
       totalTokensMinted: tokenStats?.total || 0,
     };
+  }
+
+  // Price history methods
+  async getPriceHistory(assetId: string, limit?: number): Promise<PriceHistory[]> {
+    const query = db
+      .select()
+      .from(priceHistory)
+      .where(eq(priceHistory.assetId, assetId))
+      .orderBy(asc(priceHistory.timestamp));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    return await query;
+  }
+
+  async createPriceHistory(assetId: string, price: string, volume: number, orderId?: string): Promise<PriceHistory> {
+    const [record] = await db
+      .insert(priceHistory)
+      .values({ assetId, price, volume, orderId })
+      .returning();
+    return record;
+  }
+
+  async getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number }[]> {
+    const allAssets = await this.getAllAssets();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const marketData = await Promise.all(
+      allAssets.map(async (asset) => {
+        // Get open orders for bid/ask
+        const openOrders = await db
+          .select()
+          .from(orders)
+          .where(and(eq(orders.assetId, asset.id), eq(orders.status, "OPEN")));
+
+        // For now, we only have sell orders (asks)
+        const asks = openOrders.map(o => parseFloat(o.pricePerToken));
+        const bestAsk = asks.length > 0 ? Math.min(...asks).toFixed(2) : null;
+
+        // Get last trade price
+        const [lastTrade] = await db
+          .select()
+          .from(priceHistory)
+          .where(eq(priceHistory.assetId, asset.id))
+          .orderBy(desc(priceHistory.timestamp))
+          .limit(1);
+
+        // Get 24h volume
+        const [volumeResult] = await db
+          .select({ total: sql<number>`coalesce(sum(${priceHistory.volume}), 0)::int` })
+          .from(priceHistory)
+          .where(and(
+            eq(priceHistory.assetId, asset.id),
+            sql`${priceHistory.timestamp} > ${oneDayAgo}`
+          ));
+
+        return {
+          assetId: asset.id,
+          asset,
+          bestBid: null, // Would need buy orders to implement
+          bestAsk,
+          lastPrice: lastTrade?.price || null,
+          volume24h: volumeResult?.total || 0,
+        };
+      })
+    );
+
+    return marketData;
+  }
+
+  // KYC Documents methods
+  async getKycDocuments(userId: string): Promise<KycDocument[]> {
+    return await db
+      .select()
+      .from(kycDocuments)
+      .where(eq(kycDocuments.userId, userId))
+      .orderBy(desc(kycDocuments.uploadedAt));
+  }
+
+  async getAllPendingDocuments(): Promise<(KycDocument & { user: User })[]> {
+    const result = await db
+      .select()
+      .from(kycDocuments)
+      .innerJoin(users, eq(kycDocuments.userId, users.id))
+      .where(eq(kycDocuments.status, "PENDING"))
+      .orderBy(desc(kycDocuments.uploadedAt));
+
+    return result.map(row => ({
+      ...row.kyc_documents,
+      user: row.users,
+    }));
+  }
+
+  async createKycDocument(userId: string, documentType: string, fileName: string, fileData: string): Promise<KycDocument> {
+    const [doc] = await db
+      .insert(kycDocuments)
+      .values({ userId, documentType, fileName, fileData })
+      .returning();
+    return doc;
+  }
+
+  async updateKycDocumentStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", reviewNotes?: string): Promise<KycDocument | undefined> {
+    const [doc] = await db
+      .update(kycDocuments)
+      .set({ status, reviewNotes, reviewedAt: new Date() })
+      .where(eq(kycDocuments.id, id))
+      .returning();
+    return doc || undefined;
   }
 }
 

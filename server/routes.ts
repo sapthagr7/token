@@ -372,6 +372,14 @@ export async function registerRoutes(
         reason: "TRADE",
       });
 
+      // Record price history for charts
+      await storage.createPriceHistory(
+        order.assetId,
+        order.pricePerToken,
+        order.tokenAmount,
+        order.id
+      );
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -407,6 +415,90 @@ export async function registerRoutes(
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const transfers = await storage.getTransfers(limit);
       res.json(transfers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Price history and market data
+  app.get("/api/market-data", authMiddleware(storage), async (req, res) => {
+    try {
+      const marketData = await storage.getAssetMarketData();
+      res.json(marketData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/price-history/:assetId", authMiddleware(storage), async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const history = await storage.getPriceHistory(req.params.assetId, limit);
+      res.json(history);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // KYC Documents
+  app.get("/api/kyc/documents", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const documents = await storage.getKycDocuments(req.user.id);
+      // Don't send file data in list view
+      const docsWithoutData = documents.map(({ fileData, ...doc }) => doc);
+      res.json(docsWithoutData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/kyc/documents", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      
+      const { documentType, fileName, fileData } = req.body;
+      if (!documentType || !fileName || !fileData) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      if (!["id", "proof_of_address"].includes(documentType)) {
+        return res.status(400).json({ error: "Invalid document type" });
+      }
+
+      const document = await storage.createKycDocument(req.user.id, documentType, fileName, fileData);
+      const { fileData: _, ...docWithoutData } = document;
+      res.status(201).json(docWithoutData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/kyc-documents", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const documents = await storage.getAllPendingDocuments();
+      // Don't send full file data in list view
+      const docsWithoutData = documents.map(({ fileData, ...doc }) => doc);
+      res.json(docsWithoutData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/kyc-documents/:id", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const { status, reviewNotes } = req.body;
+      if (!status || !["APPROVED", "REJECTED"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+
+      const document = await storage.updateKycDocumentStatus(req.params.id, status, reviewNotes);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      
+      const { fileData, ...docWithoutData } = document;
+      res.json(docWithoutData);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

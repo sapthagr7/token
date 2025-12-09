@@ -12,6 +12,8 @@ import {
   Loader2,
   AlertCircle,
   X,
+  TrendingUp,
+  BarChart3,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,10 +41,20 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AssetTypeBadge, OrderStatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/loading-states";
 import { EmptyMarketplace } from "@/components/empty-states";
+import { PriceChart } from "@/components/price-chart";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/lib/auth-store";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Order, Asset, User, Token } from "@shared/schema";
+
+interface MarketData {
+  assetId: string;
+  asset: Asset;
+  bestBid: string | null;
+  bestAsk: string | null;
+  lastPrice: string | null;
+  volume24h: number;
+}
 
 type OrderWithDetails = Order & { seller: User; asset: Asset };
 type TokenWithAsset = Token & { asset: Asset };
@@ -79,6 +91,12 @@ export default function MarketplacePage() {
   const { data: myTokens } = useQuery<TokenWithAsset[]>({
     queryKey: ["/api/tokens/my-portfolio"],
   });
+
+  const { data: marketData } = useQuery<MarketData[]>({
+    queryKey: ["/api/market-data"],
+  });
+
+  const [selectedAssetForChart, setSelectedAssetForChart] = useState<string | null>(null);
 
   const form = useForm<CreateOrderForm>({
     resolver: zodResolver(createOrderSchema),
@@ -320,6 +338,63 @@ export default function MarketplacePage() {
               : "Your account is frozen. You cannot trade until an administrator unfreezes it."}
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* Market Data Summary */}
+      {marketData && marketData.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Market Overview
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {marketData.map((data) => {
+              const Icon = assetIcons[data.asset.type];
+              return (
+                <Card key={data.assetId} className="hover-elevate cursor-pointer" onClick={() => setSelectedAssetForChart(data.assetId === selectedAssetForChart ? null : data.assetId)}>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-md bg-muted p-2">
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{data.asset.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <AssetTypeBadge type={data.asset.type} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Best Ask</p>
+                        <p className="font-semibold font-mono text-sm">
+                          {data.bestAsk ? `$${parseFloat(data.bestAsk).toFixed(2)}` : "-"}
+                        </p>
+                        {data.lastPrice && (
+                          <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                            <TrendingUp className="h-3 w-3" />
+                            Last: ${parseFloat(data.lastPrice).toFixed(2)}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          24h Vol: {data.volume24h.toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {selectedAssetForChart && (
+            <div className="mt-4">
+              <PriceChart 
+                assetId={selectedAssetForChart} 
+                assetTitle={marketData.find(d => d.assetId === selectedAssetForChart)?.asset.title || "Asset"} 
+              />
+            </div>
+          )}
+        </div>
       )}
 
       <Tabs defaultValue="browse" className="space-y-6">

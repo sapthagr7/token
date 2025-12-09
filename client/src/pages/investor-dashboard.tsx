@@ -15,6 +15,7 @@ import { StatCard } from "@/components/stat-card";
 import { AssetTypeBadge, OrderStatusBadge } from "@/components/status-badge";
 import { DashboardSkeleton } from "@/components/loading-states";
 import { EmptyPortfolio } from "@/components/empty-states";
+import { KycDocumentUpload } from "@/components/kyc-documents";
 import { useAuthStore } from "@/lib/auth-store";
 import type { Token, Asset, Order } from "@shared/schema";
 
@@ -220,6 +221,10 @@ export default function InvestorDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {user?.kycStatus !== "APPROVED" && (
+        <KycDocumentUpload />
+      )}
     </div>
   );
 }
