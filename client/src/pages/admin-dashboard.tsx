@@ -42,7 +42,7 @@ export default function AdminDashboard() {
   });
 
   const { data: recentTransfers, isLoading: transfersLoading } = useQuery<TransferWithDetails[]>({
-    queryKey: ["/api/transfers", { limit: 5 }],
+    queryKey: ["/api/admin/transfers", { limit: 5 }],
   });
 
   if (statsLoading || usersLoading || transfersLoading) {

@@ -466,11 +466,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/transfers", authMiddleware(storage), async (req, res) => {
+  // Admin-only: Full transfer ledger access
+  app.get("/api/admin/transfers", authMiddleware(storage), adminMiddleware, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const transfers = await storage.getTransfers(limit);
-      res.json(transfers);
+      const allTransfers = await storage.getTransfers(limit);
+      res.json(allTransfers);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -619,6 +620,93 @@ export async function registerRoutes(
       const limit = parseInt(req.query.limit as string) || 100;
       const navHistoryData = await storage.getNavHistory(req.params.id, limit);
       res.json(navHistoryData);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Reports - Admin-only transaction report
+  app.get("/api/admin/reports/transactions", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { generateTransactionReport } = await import("./reports");
+      const limit = parseInt(req.query.limit as string) || 500;
+      const transfersList = await storage.getTransfers(limit);
+      const report = generateTransactionReport(transfersList);
+      
+      res.setHeader("Content-Type", report.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+      res.send(report.content);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/reports/portfolio", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const { generatePortfolioReport } = await import("./reports");
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      
+      const tokensList = await storage.getTokensByUser(req.user.id);
+      const report = generatePortfolioReport(req.user, tokensList);
+      
+      res.setHeader("Content-Type", report.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+      res.send(report.content);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/reports/tax", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const { generateTaxReport } = await import("./reports");
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      
+      // Get all orders where user was buyer or seller and order was filled
+      const allOrders = await storage.getOrdersByUser(req.user.id);
+      const filledOrders = allOrders.filter(o => o.status === "FILLED");
+      
+      const report = generateTaxReport(req.user, filledOrders);
+      
+      res.setHeader("Content-Type", report.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+      res.send(report.content);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/reports/compliance", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const { generateComplianceReport } = await import("./reports");
+      
+      const usersList = await storage.getAllUsers();
+      const tokensList = await storage.getAllTokensWithDetails();
+      const transfersList = await storage.getTransfers(1000);
+      
+      const report = generateComplianceReport(usersList, tokensList, transfersList);
+      
+      res.setHeader("Content-Type", report.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+      res.send(report.content);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/reports/asset/:id/price-history", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      const { generatePriceHistoryReport } = await import("./reports");
+      
+      const asset = await storage.getAsset(req.params.id);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      
+      const priceHistoryData = await storage.getPriceHistory(req.params.id);
+      const report = generatePriceHistoryReport(asset, priceHistoryData);
+      
+      res.setHeader("Content-Type", report.contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${report.filename}"`);
+      res.send(report.content);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

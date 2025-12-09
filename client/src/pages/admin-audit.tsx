@@ -78,7 +78,7 @@ export default function AdminAuditPage() {
   const [reasonFilter, setReasonFilter] = useState<string>("all");
 
   const { data: transfers, isLoading } = useQuery<TransferWithDetails[]>({
-    queryKey: ["/api/transfers"],
+    queryKey: ["/api/admin/transfers"],
   });
 
   const filteredTransfers = (transfers || []).filter((t) => {

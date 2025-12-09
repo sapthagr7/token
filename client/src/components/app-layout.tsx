@@ -38,6 +38,7 @@ interface AppLayoutProps {
 const investorNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/marketplace", label: "Marketplace", icon: ShoppingCart },
+  { href: "/reports", label: "Reports", icon: FileText },
   { href: "/kyc", label: "KYC Status", icon: UserCircle },
 ];
 
@@ -48,6 +49,7 @@ const adminNavItems = [
   { href: "/admin/assets", label: "Assets", icon: Package },
   { href: "/admin/tokens", label: "Tokens", icon: Coins },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admin/reports", label: "Reports", icon: FileText },
   { href: "/admin/audit", label: "Audit Log", icon: History },
 ];
 

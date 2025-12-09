@@ -19,6 +19,8 @@ import AdminTokensPage from "@/pages/admin-tokens";
 import AdminAuditPage from "@/pages/admin-audit";
 import AdminDocumentsPage from "@/pages/admin-documents";
 import AdminAnalyticsPage from "@/pages/admin-analytics";
+import ReportsPage from "@/pages/reports";
+import AdminReportsPage from "@/pages/admin-reports";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ 
@@ -87,6 +89,10 @@ function Router() {
         <ProtectedRoute component={KycStatusPage} />
       </Route>
 
+      <Route path="/reports">
+        <ProtectedRoute component={ReportsPage} />
+      </Route>
+
       <Route path="/admin">
         <ProtectedRoute component={AdminDashboard} adminOnly />
       </Route>
@@ -117,6 +123,10 @@ function Router() {
 
       <Route path="/admin/analytics">
         <ProtectedRoute component={AdminAnalyticsPage} adminOnly />
+      </Route>
+
+      <Route path="/admin/reports">
+        <ProtectedRoute component={AdminReportsPage} adminOnly />
       </Route>
 
       <Route component={NotFound} />
