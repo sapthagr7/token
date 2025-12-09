@@ -9,6 +9,7 @@ interface StatCardProps {
   icon?: LucideIcon;
   className?: string;
   valueClassName?: string;
+  "data-testid"?: string;
 }
 
 export function StatCard({
@@ -18,9 +19,10 @@ export function StatCard({
   icon: Icon,
   className,
   valueClassName,
+  "data-testid": dataTestId,
 }: StatCardProps) {
   return (
-    <Card className={cn("", className)}>
+    <Card className={cn("", className)} data-testid={dataTestId}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">

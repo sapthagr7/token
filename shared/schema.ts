@@ -36,6 +36,7 @@ export const tokens = pgTable("tokens", {
   assetId: varchar("asset_id").notNull().references(() => assets.id),
   ownerId: varchar("owner_id").notNull().references(() => users.id),
   amount: integer("amount").notNull(),
+  costBasis: decimal("cost_basis", { precision: 18, scale: 2 }).notNull().default("0"),
   frozen: boolean("frozen").notNull().default(false),
 });
 

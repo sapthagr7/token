@@ -25,7 +25,8 @@ export interface IStorage {
   getTokensByUser(userId: string): Promise<(Token & { asset: Asset })[]>;
   getTokenByAssetAndUser(assetId: string, userId: string): Promise<Token | undefined>;
   getAllTokensWithDetails(): Promise<(Token & { asset: Asset; owner: User })[]>;
-  createToken(assetId: string, ownerId: string, amount: number): Promise<Token>;
+  createToken(assetId: string, ownerId: string, amount: number, costBasis?: string): Promise<Token>;
+  updateTokenCostBasis(id: string, costBasis: string, amount: number): Promise<Token | undefined>;
   updateTokenAmount(id: string, amount: number): Promise<Token | undefined>;
   deleteToken(id: string): Promise<void>;
   
@@ -219,12 +220,21 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createToken(assetId: string, ownerId: string, amount: number): Promise<Token> {
+  async createToken(assetId: string, ownerId: string, amount: number, costBasis?: string): Promise<Token> {
     const [token] = await db
       .insert(tokens)
-      .values({ assetId, ownerId, amount, frozen: false })
+      .values({ assetId, ownerId, amount, costBasis: costBasis || "0", frozen: false })
       .returning();
     return token;
+  }
+
+  async updateTokenCostBasis(id: string, costBasis: string, amount: number): Promise<Token | undefined> {
+    const [token] = await db
+      .update(tokens)
+      .set({ costBasis, amount })
+      .where(eq(tokens.id, id))
+      .returning();
+    return token || undefined;
   }
 
   async updateTokenAmount(id: string, amount: number): Promise<Token | undefined> {

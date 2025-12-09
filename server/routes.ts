@@ -248,10 +248,13 @@ export async function registerRoutes(
       }
 
       let token = await storage.getTokenByAssetAndUser(assetId, userId);
+      const mintCostBasis = (parseFloat(asset.navPrice) * amount).toFixed(2);
       if (token) {
-        token = await storage.updateTokenAmount(token.id, token.amount + amount);
+        const existingCostBasis = parseFloat(token.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(mintCostBasis)).toFixed(2);
+        token = await storage.updateTokenCostBasis(token.id, newCostBasis, token.amount + amount);
       } else {
-        token = await storage.createToken(assetId, userId, amount);
+        token = await storage.createToken(assetId, userId, amount, mintCostBasis);
       }
 
       await storage.updateAssetRemainingSupply(assetId, asset.remainingSupply - amount);
@@ -392,10 +395,13 @@ export async function registerRoutes(
       }
 
       let buyerToken = await storage.getTokenByAssetAndUser(order.assetId, req.user.id);
+      const tradeCostBasis = (parseFloat(order.pricePerToken) * order.tokenAmount).toFixed(2);
       if (buyerToken) {
-        await storage.updateTokenAmount(buyerToken.id, buyerToken.amount + order.tokenAmount);
+        const existingCostBasis = parseFloat(buyerToken.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(tradeCostBasis)).toFixed(2);
+        await storage.updateTokenCostBasis(buyerToken.id, newCostBasis, buyerToken.amount + order.tokenAmount);
       } else {
-        await storage.createToken(order.assetId, req.user.id, order.tokenAmount);
+        await storage.createToken(order.assetId, req.user.id, order.tokenAmount, tradeCostBasis);
       }
 
       await storage.updateOrderStatus(order.id, "FILLED", req.user.id);

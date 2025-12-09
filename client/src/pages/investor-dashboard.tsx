@@ -3,11 +3,13 @@ import { Link } from "wouter";
 import {
   Coins,
   TrendingUp,
+  TrendingDown,
   ShoppingCart,
   ArrowRight,
   Building2,
   Wheat,
   FileText,
+  DollarSign,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,12 +49,20 @@ export default function InvestorDashboard() {
   const orders = myOrders || [];
   const openOrders = orders.filter((o) => o.status === "OPEN");
 
-  const totalValue = tokens.reduce((sum, token) => {
+  const totalMarketValue = tokens.reduce((sum, token) => {
     const price = parseFloat(token.asset.navPrice);
     return sum + token.amount * price;
   }, 0);
 
+  const totalBookValue = tokens.reduce((sum, token) => {
+    return sum + parseFloat(token.costBasis || "0");
+  }, 0);
+
   const totalTokens = tokens.reduce((sum, token) => sum + token.amount, 0);
+
+  const gainLoss = totalMarketValue - totalBookValue;
+  const gainLossPercent = totalBookValue > 0 ? ((gainLoss / totalBookValue) * 100) : 0;
+  const isGain = gainLoss >= 0;
 
   return (
     <div className="space-y-8">
@@ -75,25 +85,31 @@ export default function InvestorDashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Portfolio Value"
-          value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          icon={TrendingUp}
+          title="Book Value"
+          value={`$${totalBookValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          description="Total cost basis"
+          icon={DollarSign}
+          data-testid="stat-book-value"
         />
         <StatCard
-          title="Total Tokens"
-          value={totalTokens.toLocaleString()}
+          title="Market Value"
+          value={`$${totalMarketValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          description="Current NAV value"
           icon={Coins}
+          data-testid="stat-market-value"
         />
         <StatCard
-          title="Assets Owned"
-          value={tokens.length}
-          description="Unique asset types"
-          icon={Building2}
+          title="Total Gain/Loss"
+          value={`${isGain ? "+" : ""}$${gainLoss.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          description={`${isGain ? "+" : ""}${gainLossPercent.toFixed(2)}%`}
+          icon={isGain ? TrendingUp : TrendingDown}
+          valueClassName={isGain ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}
+          data-testid="stat-gain-loss"
         />
         <StatCard
           title="Active Orders"
           value={openOrders.length}
-          description="Open sell orders"
+          description={`${totalTokens.toLocaleString()} tokens owned`}
           icon={ShoppingCart}
         />
       </div>
