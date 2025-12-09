@@ -106,7 +106,7 @@ export default function InvestorDashboard() {
               <CardDescription>Your current token holdings</CardDescription>
             </div>
             {tokens.length > 0 && (
-              <Link href="/portfolio">
+              <Link href="/my-tokens">
                 <Button variant="ghost" size="sm" className="gap-1" data-testid="link-view-all-tokens">
                   View all
                   <ArrowRight className="h-4 w-4" />

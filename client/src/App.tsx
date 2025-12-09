@@ -22,6 +22,7 @@ import AdminAnalyticsPage from "@/pages/admin-analytics";
 import AdminAssetEditPage from "@/pages/admin-asset-edit";
 import ReportsPage from "@/pages/reports";
 import AdminReportsPage from "@/pages/admin-reports";
+import MyTokensPage from "@/pages/my-tokens";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ 
@@ -92,6 +93,10 @@ function Router() {
 
       <Route path="/reports">
         <ProtectedRoute component={ReportsPage} />
+      </Route>
+
+      <Route path="/my-tokens">
+        <ProtectedRoute component={MyTokensPage} />
       </Route>
 
       <Route path="/admin">
