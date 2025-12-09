@@ -11,7 +11,7 @@ import {
   type AuthenticatedRequest
 } from "./auth";
 import { 
-  insertUserSchema, 
+  publicRegistrationSchema, 
   loginSchema, 
   insertAssetSchema,
   mintTokensSchema,
@@ -25,7 +25,9 @@ export async function registerRoutes(
   
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const parsed = insertUserSchema.safeParse(req.body);
+      // Use publicRegistrationSchema to prevent privilege escalation
+      // Only accepts name, email, password - ignores any role/kycStatus/isFrozen
+      const parsed = publicRegistrationSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors[0].message });
       }
@@ -376,7 +378,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/marketplace/order/:id/cancel", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+  app.post("/api/marketplace/order/:id/cancel", authMiddleware(storage), kycApprovedMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 

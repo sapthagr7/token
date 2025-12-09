@@ -112,7 +112,11 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
-export const insertAssetSchema = createInsertSchema(assets).omit({
+export const insertAssetSchema = createInsertSchema(assets, {
+  // Override drizzle-zod defaults to accept numbers from forms
+  totalSupply: z.coerce.number().int().positive("Supply must be positive"),
+  navPrice: z.coerce.number().positive("Price must be positive"),
+}).omit({
   id: true,
   createdAt: true,
   remainingSupply: true,
