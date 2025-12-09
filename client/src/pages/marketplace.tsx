@@ -6,6 +6,7 @@ import { z } from "zod";
 import {
   ShoppingCart,
   Plus,
+  Building,
   Building2,
   Wheat,
   FileText,
@@ -14,6 +15,8 @@ import {
   X,
   TrendingUp,
   BarChart3,
+  Send,
+  Package,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AssetTypeBadge, OrderStatusBadge } from "@/components/status-badge";
+import { AssetTypeBadge, OrderStatusBadge, ApprovalStatusBadge, TokenRequestStatusBadge } from "@/components/status-badge";
 import { TableSkeleton } from "@/components/loading-states";
 import { EmptyMarketplace } from "@/components/empty-states";
 import { PriceChart } from "@/components/price-chart";
@@ -73,11 +76,31 @@ const createOrderSchema = z.object({
 
 type CreateOrderForm = z.infer<typeof createOrderSchema>;
 
+const tokenRequestSchema = z.object({
+  assetId: z.string().min(1, "Select an asset"),
+  amount: z.coerce.number().int().positive("Amount must be positive"),
+});
+
+type TokenRequestForm = z.infer<typeof tokenRequestSchema>;
+
+interface TokenRequest {
+  id: string;
+  userId: string;
+  assetId: string;
+  amount: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  asset: Asset;
+}
+
 export default function MarketplacePage() {
   const { user } = useAuthStore();
   const { toast } = useToast();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null);
 
   const { data: openOrders, isLoading: ordersLoading } = useQuery<OrderWithDetails[]>({
@@ -96,6 +119,14 @@ export default function MarketplacePage() {
     queryKey: ["/api/market-data"],
   });
 
+  const { data: allAssets } = useQuery<Asset[]>({
+    queryKey: ["/api/assets"],
+  });
+
+  const { data: myTokenRequests, isLoading: tokenRequestsLoading } = useQuery<TokenRequest[]>({
+    queryKey: ["/api/marketplace/my-token-requests"],
+  });
+
   const [selectedAssetForChart, setSelectedAssetForChart] = useState<string | null>(null);
 
   const form = useForm<CreateOrderForm>({
@@ -104,6 +135,14 @@ export default function MarketplacePage() {
       assetId: "",
       tokenAmount: 0,
       pricePerToken: 0,
+    },
+  });
+
+  const requestForm = useForm<TokenRequestForm>({
+    resolver: zodResolver(tokenRequestSchema),
+    defaultValues: {
+      assetId: "",
+      amount: 0,
     },
   });
 
@@ -119,7 +158,7 @@ export default function MarketplacePage() {
       form.reset();
       toast({
         title: "Order created",
-        description: "Your sell order has been placed in the marketplace.",
+        description: "Your sell order has been submitted and is pending admin approval.",
       });
     },
     onError: (error: Error) => {
@@ -177,8 +216,34 @@ export default function MarketplacePage() {
     },
   });
 
+  const tokenRequestMutation = useMutation({
+    mutationFn: async (data: TokenRequestForm) => {
+      return await apiRequest("POST", "/api/marketplace/token-request", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/my-token-requests"] });
+      setRequestDialogOpen(false);
+      requestForm.reset();
+      toast({
+        title: "Request submitted",
+        description: "Your token request has been submitted and is pending admin approval.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to submit request",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmitOrder = (data: CreateOrderForm) => {
     createOrderMutation.mutate(data);
+  };
+
+  const onSubmitRequest = (data: TokenRequestForm) => {
+    tokenRequestMutation.mutate(data);
   };
 
   const handleBuyClick = (order: OrderWithDetails) => {
@@ -195,6 +260,8 @@ export default function MarketplacePage() {
   const orders = openOrders || [];
   const userOrders = myOrders || [];
   const tokens = myTokens || [];
+  const assets = allAssets || [];
+  const tokenRequests = myTokenRequests || [];
   const kycApproved = user?.kycStatus === "APPROVED";
   const isFrozen = user?.isFrozen;
 
@@ -210,20 +277,104 @@ export default function MarketplacePage() {
             Buy and sell tokens from other verified investors
           </p>
         </div>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              className="gap-2"
-              disabled={!kycApproved || isFrozen || tokens.length === 0}
-              data-testid="button-create-order"
-            >
-              <Plus className="h-4 w-4" />
-              Create Sell Order
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Sell Order</DialogTitle>
+        <div className="flex gap-2 flex-wrap">
+          <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                className="gap-2"
+                disabled={!kycApproved || isFrozen || assets.length === 0}
+                data-testid="button-request-tokens"
+              >
+                <Send className="h-4 w-4" />
+                Request Tokens
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Request Tokens</DialogTitle>
+                <DialogDescription>
+                  Submit a request to purchase tokens. An admin will review and mint tokens to your account.
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...requestForm}>
+                <form onSubmit={requestForm.handleSubmit(onSubmitRequest)} className="space-y-4">
+                  <FormField
+                    control={requestForm.control}
+                    name="assetId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Asset</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-request-asset">
+                              <SelectValue placeholder="Select an asset" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {assets.filter(a => a.remainingSupply > 0).map((asset) => (
+                              <SelectItem key={asset.id} value={asset.id}>
+                                {asset.title} ({asset.remainingSupply} available)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={requestForm.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Number of Tokens</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={1}
+                            placeholder="Enter amount"
+                            data-testid="input-request-amount"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button type="button" variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button type="submit" disabled={tokenRequestMutation.isPending} data-testid="button-submit-request">
+                      {tokenRequestMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        "Submit Request"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                className="gap-2"
+                disabled={!kycApproved || isFrozen || tokens.length === 0}
+                data-testid="button-create-order"
+              >
+                <Plus className="h-4 w-4" />
+                Create Sell Order
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Sell Order</DialogTitle>
               <DialogDescription>
                 List your tokens for sale on the marketplace
               </DialogDescription>
@@ -325,8 +476,9 @@ export default function MarketplacePage() {
                 </DialogFooter>
               </form>
             </Form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {(!kycApproved || isFrozen) && (
@@ -404,6 +556,9 @@ export default function MarketplacePage() {
           </TabsTrigger>
           <TabsTrigger value="my-orders" data-testid="tab-my-orders">
             My Orders
+          </TabsTrigger>
+          <TabsTrigger value="my-requests" data-testid="tab-my-requests">
+            My Requests
           </TabsTrigger>
         </TabsList>
 
@@ -510,6 +665,9 @@ export default function MarketplacePage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium">{order.asset.title}</p>
                               <OrderStatusBadge status={order.status} />
+                              {order.status === "OPEN" && (
+                                <ApprovalStatusBadge status={order.approvalStatus} />
+                              )}
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {order.tokenAmount} tokens @ ${parseFloat(order.pricePerToken).toFixed(2)} = ${totalPrice.toFixed(2)}
@@ -534,6 +692,59 @@ export default function MarketplacePage() {
                             )}
                           </Button>
                         )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="my-requests" className="space-y-6">
+          {tokenRequestsLoading ? (
+            <TableSkeleton rows={5} />
+          ) : tokenRequests.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-muted p-4 mb-4">
+                    <Send className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-1">No token requests yet</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm">
+                    Request tokens from assets to have them minted to your account.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {tokenRequests.map((request) => {
+                const asset = assets.find(a => a.id === request.assetId);
+                const Icon = asset ? assetIcons[asset.type] : Building;
+
+                return (
+                  <Card key={request.id} data-testid={`token-request-${request.id}`}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="flex items-center gap-4">
+                          <div className="rounded-md bg-muted p-2">
+                            <Icon className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium">{asset?.title || "Unknown Asset"}</p>
+                              <TokenRequestStatusBadge status={request.status} />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Requested {request.amount} tokens
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right text-sm text-muted-foreground">
+                          {new Date(request.createdAt).toLocaleDateString()}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

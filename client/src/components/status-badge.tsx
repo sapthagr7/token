@@ -166,3 +166,83 @@ export function RoleBadge({ role, className }: RoleBadgeProps) {
     </Badge>
   );
 }
+
+type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+interface ApprovalStatusBadgeProps {
+  status: ApprovalStatus;
+  className?: string;
+}
+
+export function ApprovalStatusBadge({ status, className }: ApprovalStatusBadgeProps) {
+  const config = {
+    PENDING: {
+      label: "Pending Approval",
+      className: "border-amber-500/50 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30",
+      icon: Clock,
+    },
+    APPROVED: {
+      label: "Approved",
+      className: "border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30",
+      icon: CheckCircle,
+    },
+    REJECTED: {
+      label: "Rejected",
+      className: "border-red-500/50 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30",
+      icon: XCircle,
+    },
+  };
+
+  const { label, className: badgeClassName, icon: Icon } = config[status];
+
+  return (
+    <Badge
+      variant="outline"
+      className={cn("gap-1 font-medium", badgeClassName, className)}
+      data-testid={`badge-approval-${status.toLowerCase()}`}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
+  );
+}
+
+type TokenRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+interface TokenRequestStatusBadgeProps {
+  status: TokenRequestStatus;
+  className?: string;
+}
+
+export function TokenRequestStatusBadge({ status, className }: TokenRequestStatusBadgeProps) {
+  const config = {
+    PENDING: {
+      label: "Pending",
+      className: "border-amber-500/50 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30",
+      icon: Clock,
+    },
+    APPROVED: {
+      label: "Fulfilled",
+      className: "border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30",
+      icon: CheckCircle,
+    },
+    REJECTED: {
+      label: "Rejected",
+      className: "border-red-500/50 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30",
+      icon: XCircle,
+    },
+  };
+
+  const { label, className: badgeClassName, icon: Icon } = config[status];
+
+  return (
+    <Badge
+      variant="outline"
+      className={cn("gap-1 font-medium", badgeClassName, className)}
+      data-testid={`badge-request-${status.toLowerCase()}`}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
+  );
+}

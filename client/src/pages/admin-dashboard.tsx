@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   Users,
@@ -9,15 +9,22 @@ import {
   UserCheck,
   TrendingUp,
   Clock,
+  CheckCircle,
+  XCircle,
+  ShoppingCart,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
-import { KycBadge, FrozenBadge } from "@/components/status-badge";
+import { KycBadge, FrozenBadge, AssetTypeBadge } from "@/components/status-badge";
 import { DashboardSkeleton } from "@/components/loading-states";
 import { EmptyUsers } from "@/components/empty-states";
 import { useAuthStore } from "@/lib/auth-store";
-import type { User, Asset, Transfer } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { User, Asset, Transfer, Order } from "@shared/schema";
 
 type TransferWithDetails = Transfer & { 
   asset: Asset; 
@@ -25,8 +32,27 @@ type TransferWithDetails = Transfer & {
   toUser?: User;
 };
 
+type OrderWithDetails = Order & {
+  seller: User;
+  asset: Asset;
+};
+
+interface TokenRequest {
+  id: string;
+  userId: string;
+  assetId: string;
+  amount: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  asset: Asset;
+  user: User;
+}
+
 export default function AdminDashboard() {
   const { user } = useAuthStore();
+  const { toast } = useToast();
 
   const { data: stats, isLoading: statsLoading } = useQuery<{
     totalUsers: number;
@@ -45,12 +71,76 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/transfers", { limit: 5 }],
   });
 
+  const { data: pendingOrders } = useQuery<OrderWithDetails[]>({
+    queryKey: ["/api/admin/pending-orders"],
+  });
+
+  const { data: pendingTokenRequests } = useQuery<TokenRequest[]>({
+    queryKey: ["/api/admin/token-requests"],
+  });
+
+  const approveOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      return await apiRequest("POST", `/api/admin/orders/${orderId}/approve`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/orders"] });
+      toast({ title: "Order approved", description: "The sell order is now visible to buyers." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to approve order", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const rejectOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      return await apiRequest("POST", `/api/admin/orders/${orderId}/reject`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-orders"] });
+      toast({ title: "Order rejected", description: "The sell order has been rejected." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to reject order", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const fulfillTokenRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      return await apiRequest("POST", `/api/admin/token-requests/${requestId}/approve`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/token-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Request fulfilled", description: "Tokens have been minted to the user." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to fulfill request", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const rejectTokenRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      return await apiRequest("POST", `/api/admin/token-requests/${requestId}/reject`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/token-requests"] });
+      toast({ title: "Request rejected", description: "The token request has been rejected." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to reject request", description: error.message, variant: "destructive" });
+    },
+  });
+
   if (statsLoading || usersLoading || transfersLoading) {
     return <DashboardSkeleton />;
   }
 
   const pending = pendingUsers || [];
   const transfers = recentTransfers || [];
+  const ordersToApprove = pendingOrders || [];
+  const tokenRequestsToProcess = (pendingTokenRequests || []).filter(r => r.status === "PENDING");
 
   return (
     <div className="space-y-8">
@@ -203,6 +293,149 @@ export default function AdminDashboard() {
                     <p className="text-xs text-muted-foreground flex-shrink-0">
                       {new Date(transfer.timestamp).toLocaleDateString()}
                     </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Pending Orders and Token Requests */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+            <div>
+              <CardTitle className="text-lg">Pending Orders</CardTitle>
+              <CardDescription>Sell orders awaiting approval</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {ordersToApprove.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="rounded-full bg-emerald-100 dark:bg-emerald-950/50 p-4 mb-4">
+                  <ShoppingCart className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-semibold mb-1">No pending orders</h3>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  All sell orders have been reviewed.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {ordersToApprove.slice(0, 5).map((order) => (
+                  <div
+                    key={order.id}
+                    className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/50"
+                    data-testid={`pending-order-${order.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{order.asset.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {order.tokenAmount} tokens @ ${parseFloat(order.pricePerToken).toFixed(2)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Seller: {order.seller.name}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => approveOrderMutation.mutate(order.id)}
+                        disabled={approveOrderMutation.isPending}
+                        data-testid={`button-approve-order-${order.id}`}
+                      >
+                        {approveOrderMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => rejectOrderMutation.mutate(order.id)}
+                        disabled={rejectOrderMutation.isPending}
+                        data-testid={`button-reject-order-${order.id}`}
+                      >
+                        {rejectOrderMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+            <div>
+              <CardTitle className="text-lg">Token Requests</CardTitle>
+              <CardDescription>Users requesting token allocation</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {tokenRequestsToProcess.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="rounded-full bg-emerald-100 dark:bg-emerald-950/50 p-4 mb-4">
+                  <Send className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-semibold mb-1">No pending requests</h3>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  All token requests have been processed.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {tokenRequestsToProcess.slice(0, 5).map((request) => (
+                  <div
+                    key={request.id}
+                    className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/50"
+                    data-testid={`pending-request-${request.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{request.asset.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {request.amount} tokens requested
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        By: {request.user.name}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => fulfillTokenRequestMutation.mutate(request.id)}
+                        disabled={fulfillTokenRequestMutation.isPending}
+                        data-testid={`button-fulfill-request-${request.id}`}
+                      >
+                        {fulfillTokenRequestMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 text-emerald-600" />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => rejectTokenRequestMutation.mutate(request.id)}
+                        disabled={rejectTokenRequestMutation.isPending}
+                        data-testid={`button-reject-request-${request.id}`}
+                      >
+                        {rejectTokenRequestMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
