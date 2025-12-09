@@ -4,7 +4,7 @@ import {
   type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory, type Notification, type TokenRequest, type InsertTokenRequest
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -40,6 +40,7 @@ export interface IStorage {
   updateOrderApprovalStatus(id: string, approvalStatus: "PENDING" | "APPROVED" | "REJECTED"): Promise<Order | undefined>;
   
   getTransfers(limit?: number): Promise<(Transfer & { asset: Asset; fromUser?: User; toUser?: User })[]>;
+  getTransfersByUser(userId: string): Promise<(Transfer & { asset: Asset; fromUser?: User; toUser?: User })[]>;
   createTransfer(transfer: Omit<Transfer, "id" | "timestamp">): Promise<Transfer>;
   
   getStats(): Promise<{ totalUsers: number; pendingKyc: number; totalAssets: number; totalTokensMinted: number }>;
@@ -371,6 +372,34 @@ export class DatabaseStorage implements IStorage {
 
     const result = limit ? await query.limit(limit) : await query;
     
+    const transfersWithToUser = await Promise.all(
+      result.map(async (row) => {
+        let toUser: User | undefined;
+        if (row.transfers.toUserId) {
+          const [user] = await db.select().from(users).where(eq(users.id, row.transfers.toUserId));
+          toUser = user;
+        }
+        return {
+          ...row.transfers,
+          asset: row.assets,
+          fromUser: row.users || undefined,
+          toUser,
+        };
+      })
+    );
+
+    return transfersWithToUser;
+  }
+
+  async getTransfersByUser(userId: string): Promise<(Transfer & { asset: Asset; fromUser?: User; toUser?: User })[]> {
+    const result = await db
+      .select()
+      .from(transfers)
+      .innerJoin(assets, eq(transfers.assetId, assets.id))
+      .leftJoin(users, eq(transfers.fromUserId, users.id))
+      .where(or(eq(transfers.fromUserId, userId), eq(transfers.toUserId, userId)))
+      .orderBy(desc(transfers.timestamp));
+
     const transfersWithToUser = await Promise.all(
       result.map(async (row) => {
         let toUser: User | undefined;

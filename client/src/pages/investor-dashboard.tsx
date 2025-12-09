@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { format } from "date-fns";
 import {
   Coins,
   TrendingUp,
@@ -10,24 +11,36 @@ import {
   Wheat,
   FileText,
   DollarSign,
+  History,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/stat-card";
 import { AssetTypeBadge, OrderStatusBadge } from "@/components/status-badge";
 import { DashboardSkeleton } from "@/components/loading-states";
 import { EmptyPortfolio } from "@/components/empty-states";
 import { KycDocumentUpload } from "@/components/kyc-documents";
 import { useAuthStore } from "@/lib/auth-store";
-import type { Token, Asset, Order } from "@shared/schema";
+import type { Token, Asset, Order, Transfer, User } from "@shared/schema";
 
 type TokenWithAsset = Token & { asset: Asset };
 type OrderWithAsset = Order & { asset: Asset };
+type TransferWithDetails = Transfer & { asset: Asset; fromUser?: User; toUser?: User };
 
 const assetIcons = {
   real_estate: Building2,
   commodity: Wheat,
   loan: FileText,
+};
+
+const reasonLabels: Record<string, string> = {
+  TRADE: "Trade",
+  MINT: "Tokens Received",
+  TRANSFER: "Transfer",
+  ADMIN_REVOKE: "Admin Revoked",
 };
 
 export default function InvestorDashboard() {
@@ -41,12 +54,17 @@ export default function InvestorDashboard() {
     queryKey: ["/api/marketplace/my-orders"],
   });
 
-  if (portfolioLoading || ordersLoading) {
+  const { data: transactions, isLoading: transactionsLoading } = useQuery<TransferWithDetails[]>({
+    queryKey: ["/api/transactions/history"],
+  });
+
+  if (portfolioLoading || ordersLoading || transactionsLoading) {
     return <DashboardSkeleton />;
   }
 
   const tokens = portfolio || [];
   const orders = myOrders || [];
+  const history = transactions || [];
   const openOrders = orders.filter((o) => o.status === "OPEN");
 
   const totalMarketValue = tokens.reduce((sum, token) => {
@@ -63,6 +81,15 @@ export default function InvestorDashboard() {
   const gainLoss = totalMarketValue - totalBookValue;
   const gainLossPercent = totalBookValue > 0 ? ((gainLoss / totalBookValue) * 100) : 0;
   const isGain = gainLoss >= 0;
+
+  const getTransactionType = (transfer: TransferWithDetails) => {
+    if (transfer.toUserId === user?.id) {
+      return "buy";
+    } else if (transfer.fromUserId === user?.id) {
+      return "sell";
+    }
+    return "transfer";
+  };
 
   return (
     <div className="space-y-8">
@@ -237,6 +264,75 @@ export default function InvestorDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+          <div>
+            <CardTitle className="text-lg">Transaction History</CardTitle>
+            <CardDescription>Your buy and sell activity</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {history.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <History className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">No transactions yet</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Your buy and sell history will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {history.slice(0, 8).map((transfer) => {
+                const Icon = assetIcons[transfer.asset.type];
+                const txType = getTransactionType(transfer);
+                const isBuy = txType === "buy";
+
+                return (
+                  <div
+                    key={transfer.id}
+                    className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/50"
+                    data-testid={`transaction-${transfer.id}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`rounded-md p-2 ${isBuy ? "bg-emerald-100 dark:bg-emerald-950" : "bg-red-100 dark:bg-red-950"}`}>
+                        {isBuy ? (
+                          <ArrowDownLeft className={`h-5 w-5 ${isBuy ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`} />
+                        ) : (
+                          <ArrowUpRight className="h-5 w-5 text-red-600 dark:text-red-400" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{transfer.asset.title}</p>
+                          <Badge variant="outline" className={isBuy ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : "border-red-500/50 text-red-600 dark:text-red-400"}>
+                            {isBuy ? "Buy" : "Sell"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-sm text-muted-foreground">
+                            {reasonLabels[transfer.reason] || transfer.reason}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-semibold font-mono ${isBuy ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                        {isBuy ? "+" : "-"}{transfer.tokenAmount.toLocaleString()} tokens
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(transfer.timestamp), "MMM d, yyyy")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {user?.kycStatus !== "APPROVED" && (
         <KycDocumentUpload />

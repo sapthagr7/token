@@ -322,6 +322,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/transactions/history", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const transfers = await storage.getTransfersByUser(req.user.id);
+      res.json(transfers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/tokens", authMiddleware(storage), adminMiddleware, async (req, res) => {
     try {
       const tokens = await storage.getAllTokensWithDetails();
