@@ -335,12 +335,20 @@ export default function AdminAssetsPage() {
                     </p>
                   </div>
 
-                  <Link href={`/admin/tokens?assetId=${asset.id}`}>
-                    <Button variant="outline" className="w-full gap-2" data-testid={`button-manage-tokens-${asset.id}`}>
-                      <Coins className="h-4 w-4" />
-                      Manage Tokens
-                    </Button>
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link href={`/admin/assets/${asset.id}/edit`} className="flex-1">
+                      <Button variant="outline" className="w-full gap-2" data-testid={`button-edit-asset-${asset.id}`}>
+                        <Edit className="h-4 w-4" />
+                        Edit
+                      </Button>
+                    </Link>
+                    <Link href={`/admin/tokens?assetId=${asset.id}`} className="flex-1">
+                      <Button variant="outline" className="w-full gap-2" data-testid={`button-manage-tokens-${asset.id}`}>
+                        <Coins className="h-4 w-4" />
+                        Tokens
+                      </Button>
+                    </Link>
+                  </div>
                 </CardContent>
               </Card>
             );

@@ -18,8 +18,10 @@ export interface IStorage {
   getAllAssets(): Promise<Asset[]>;
   createAsset(asset: InsertAsset): Promise<Asset>;
   updateAssetRemainingSupply(id: string, remainingSupply: number): Promise<Asset | undefined>;
+  updateAssetNavPrice(id: string, navPrice: string): Promise<Asset | undefined>;
   
   getToken(id: string): Promise<Token | undefined>;
+  getTokensByAsset(assetId: string): Promise<(Token & { owner: User })[]>;
   getTokensByUser(userId: string): Promise<(Token & { asset: Asset })[]>;
   getTokenByAssetAndUser(assetId: string, userId: string): Promise<Token | undefined>;
   getAllTokensWithDetails(): Promise<(Token & { asset: Asset; owner: User })[]>;
@@ -137,7 +139,7 @@ export class DatabaseStorage implements IStorage {
         description: assetData.description,
         totalSupply: assetData.totalSupply,
         remainingSupply: assetData.totalSupply,
-        navPrice: assetData.navPrice,
+        navPrice: assetData.navPrice.toString(),
       })
       .returning();
     return asset;
@@ -150,6 +152,28 @@ export class DatabaseStorage implements IStorage {
       .where(eq(assets.id, id))
       .returning();
     return asset || undefined;
+  }
+
+  async updateAssetNavPrice(id: string, navPrice: string): Promise<Asset | undefined> {
+    const [asset] = await db
+      .update(assets)
+      .set({ navPrice })
+      .where(eq(assets.id, id))
+      .returning();
+    return asset || undefined;
+  }
+
+  async getTokensByAsset(assetId: string): Promise<(Token & { owner: User })[]> {
+    const result = await db
+      .select()
+      .from(tokens)
+      .innerJoin(users, eq(tokens.ownerId, users.id))
+      .where(eq(tokens.assetId, assetId));
+    
+    return result.map((row) => ({
+      ...row.tokens,
+      owner: row.users,
+    }));
   }
 
   async getToken(id: string): Promise<Token | undefined> {

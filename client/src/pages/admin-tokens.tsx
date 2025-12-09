@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useSearch } from "wouter";
+import { useSearch, Link } from "wouter";
 import {
   Coins,
   Plus,
@@ -13,6 +13,7 @@ import {
   FileText,
   Loader2,
   AlertTriangle,
+  Edit2,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -371,16 +372,28 @@ export default function AdminTokensPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => handleRevokeClick(token)}
-                            data-testid={`button-revoke-${token.id}`}
-                          >
-                            <Trash2 className="mr-1 h-4 w-4" />
-                            Revoke
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Link href={`/admin/assets/${token.asset.id}/edit`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid={`button-edit-${token.id}`}
+                              >
+                                <Edit2 className="mr-1 h-4 w-4" />
+                                Edit
+                              </Button>
+                            </Link>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleRevokeClick(token)}
+                              data-testid={`button-revoke-${token.id}`}
+                            >
+                              <Trash2 className="mr-1 h-4 w-4" />
+                              Revoke
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

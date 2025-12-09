@@ -19,6 +19,7 @@ import AdminTokensPage from "@/pages/admin-tokens";
 import AdminAuditPage from "@/pages/admin-audit";
 import AdminDocumentsPage from "@/pages/admin-documents";
 import AdminAnalyticsPage from "@/pages/admin-analytics";
+import AdminAssetEditPage from "@/pages/admin-asset-edit";
 import ReportsPage from "@/pages/reports";
 import AdminReportsPage from "@/pages/admin-reports";
 import NotFound from "@/pages/not-found";
@@ -111,6 +112,10 @@ function Router() {
 
       <Route path="/admin/tokens">
         <ProtectedRoute component={AdminTokensPage} adminOnly />
+      </Route>
+
+      <Route path="/admin/assets/:id/edit">
+        <ProtectedRoute component={AdminAssetEditPage} adminOnly />
       </Route>
 
       <Route path="/admin/audit">

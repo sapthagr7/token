@@ -720,17 +720,90 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Valid navPrice is required" });
       }
 
-      // Create NAV history entry
-      const navEntry = await storage.createNavHistory(req.params.id, navPrice.toString(), reason || "revaluation");
-      
-      // Update the asset's current NAV
       const asset = await storage.getAsset(req.params.id);
       if (!asset) {
         return res.status(404).json({ error: "Asset not found" });
       }
 
-      // Note: We'll need to add an updateAssetNav method, for now just return the history
-      res.status(201).json(navEntry);
+      // Create NAV history entry
+      await storage.createNavHistory(req.params.id, navPrice.toString(), reason || "revaluation");
+      
+      // Update the asset's current NAV price
+      const updatedAsset = await storage.updateAssetNavPrice(req.params.id, navPrice.toString());
+
+      res.status(200).json(updatedAsset);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Get token distribution for an asset
+  app.get("/api/admin/assets/:id/tokens", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const asset = await storage.getAsset(req.params.id);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+
+      const tokenDistribution = await storage.getTokensByAsset(req.params.id);
+      res.json({ asset, tokens: tokenDistribution });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Update user's token amount for an asset
+  app.patch("/api/admin/tokens/:tokenId", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const { amount, reason } = req.body;
+      if (amount === undefined || isNaN(parseInt(amount)) || parseInt(amount) < 0) {
+        return res.status(400).json({ error: "Valid amount is required (0 or positive integer)" });
+      }
+
+      const token = await storage.getToken(req.params.tokenId);
+      if (!token) {
+        return res.status(404).json({ error: "Token not found" });
+      }
+
+      const asset = await storage.getAsset(token.assetId);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+
+      const oldAmount = token.amount;
+      const newAmount = parseInt(amount);
+      const difference = newAmount - oldAmount;
+
+      // Check supply constraints if increasing
+      if (difference > 0 && difference > asset.remainingSupply) {
+        return res.status(400).json({ 
+          error: `Insufficient supply. Only ${asset.remainingSupply} tokens available.` 
+        });
+      }
+
+      // Update the token amount
+      if (newAmount === 0) {
+        await storage.deleteToken(req.params.tokenId);
+      } else {
+        await storage.updateTokenAmount(req.params.tokenId, newAmount);
+      }
+
+      // Update remaining supply
+      await storage.updateAssetRemainingSupply(asset.id, asset.remainingSupply - difference);
+
+      // Create transfer record for audit
+      if (difference !== 0) {
+        await storage.createTransfer({
+          assetId: token.assetId,
+          fromUserId: difference < 0 ? token.ownerId : null,
+          toUserId: difference > 0 ? token.ownerId : null,
+          tokenAmount: Math.abs(difference),
+          reason: reason || (difference > 0 ? "MINT" : "ADMIN_REVOKE"),
+        });
+      }
+
+      const updatedToken = newAmount > 0 ? await storage.getToken(req.params.tokenId) : null;
+      res.json({ success: true, token: updatedToken, oldAmount, newAmount });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
