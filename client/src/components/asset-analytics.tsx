@@ -35,7 +35,7 @@ interface AssetAnalyticsPanelProps {
 
 export function AssetAnalyticsPanel({ assetId, assetTitle }: AssetAnalyticsPanelProps) {
   const { data: analytics, isLoading, error } = useQuery<AssetAnalytics>({
-    queryKey: ["/api/analytics/asset", assetId],
+    queryKey: [`/api/analytics/asset/${assetId}`],
   });
 
   if (isLoading) {

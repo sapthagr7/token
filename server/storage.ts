@@ -142,6 +142,9 @@ export class DatabaseStorage implements IStorage {
         navPrice: assetData.navPrice.toString(),
       })
       .returning();
+    
+    await this.createNavHistory(asset.id, assetData.navPrice.toString(), "Initial NAV");
+    
     return asset;
   }
 
