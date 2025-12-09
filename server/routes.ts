@@ -333,7 +333,7 @@ export async function registerRoutes(
 
   app.get("/api/marketplace/orders", authMiddleware(storage), async (req, res) => {
     try {
-      const orders = await storage.getOpenOrders();
+      const orders = await storage.getApprovedOpenOrders();
       res.json(orders);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -376,6 +376,19 @@ export async function registerRoutes(
         pricePerToken: pricePerToken.toString(),
       });
 
+      const asset = await storage.getAsset(assetId);
+      const assetTitle = asset?.title || "Unknown Asset";
+
+      const admins = await storage.getAllUsers();
+      for (const admin of admins.filter(u => u.role === "ADMIN")) {
+        await storage.createNotification(
+          admin.id,
+          "ORDER_APPROVAL",
+          "New Sell Order Pending Approval",
+          `${req.user.name} created a sell order for ${tokenAmount} tokens of ${assetTitle} at $${pricePerToken}/token. Please review.`
+        );
+      }
+
       res.status(201).json(order);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -389,6 +402,7 @@ export async function registerRoutes(
       const order = await storage.getOrder(req.params.id);
       if (!order) return res.status(404).json({ error: "Order not found" });
       if (order.status !== "OPEN") return res.status(400).json({ error: "Order is not open" });
+      if (order.approvalStatus !== "APPROVED") return res.status(400).json({ error: "Order is pending admin approval" });
       if (order.sellerId === req.user.id) return res.status(400).json({ error: "Cannot buy your own order" });
 
       const seller = await storage.getUser(order.sellerId);
@@ -486,6 +500,202 @@ export async function registerRoutes(
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const allTransfers = await storage.getTransfers(limit);
       res.json(allTransfers);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin order approval management
+  app.get("/api/admin/pending-orders", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const orders = await storage.getPendingApprovalOrders();
+      res.json(orders);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/orders/:id/approve", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const order = await storage.getOrder(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      if (order.status !== "OPEN") return res.status(400).json({ error: "Order is not open" });
+
+      await storage.updateOrderApprovalStatus(order.id, "APPROVED");
+
+      const seller = await storage.getUser(order.sellerId);
+      const asset = await storage.getAsset(order.assetId);
+      await storage.createNotification(
+        order.sellerId,
+        "ORDER_APPROVAL",
+        "Sell Order Approved",
+        `Your sell order for ${order.tokenAmount} tokens of ${asset?.title || "Unknown Asset"} has been approved and is now visible on the marketplace.`
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/orders/:id/reject", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const order = await storage.getOrder(req.params.id);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      if (order.status !== "OPEN") return res.status(400).json({ error: "Order is not open" });
+
+      await storage.updateOrderApprovalStatus(order.id, "REJECTED");
+      await storage.updateOrderStatus(order.id, "CANCELLED");
+
+      const asset = await storage.getAsset(order.assetId);
+      const returnedCostBasis = (parseFloat(asset?.navPrice || "0") * order.tokenAmount).toFixed(2);
+      
+      let token = await storage.getTokenByAssetAndUser(order.assetId, order.sellerId);
+      if (token) {
+        const existingCostBasis = parseFloat(token.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(returnedCostBasis)).toFixed(2);
+        await storage.updateTokenCostBasis(token.id, newCostBasis, token.amount + order.tokenAmount);
+      } else {
+        await storage.createToken(order.assetId, order.sellerId, order.tokenAmount, returnedCostBasis);
+      }
+
+      await storage.createNotification(
+        order.sellerId,
+        "ORDER_APPROVAL",
+        "Sell Order Rejected",
+        `Your sell order for ${order.tokenAmount} tokens of ${asset?.title || "Unknown Asset"} has been rejected. Your tokens have been returned.`
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Token Request endpoints
+  app.post("/api/marketplace/token-request", authMiddleware(storage), kycApprovedMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+      const { assetId, amount } = req.body;
+      if (!assetId || !amount) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const asset = await storage.getAsset(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const tokenRequest = await storage.createTokenRequest({
+        userId: req.user.id,
+        assetId,
+        amount: parseInt(amount),
+      });
+
+      const admins = await storage.getAllUsers();
+      for (const admin of admins.filter(u => u.role === "ADMIN")) {
+        await storage.createNotification(
+          admin.id,
+          "TOKEN_REQUEST",
+          "New Token Request",
+          `${req.user.name} requested ${amount} tokens of ${asset.title}. Please review.`
+        );
+      }
+
+      res.status(201).json(tokenRequest);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/marketplace/my-token-requests", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const requests = await storage.getTokenRequests(req.user.id);
+      res.json(requests);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/token-requests", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const requests = await storage.getPendingTokenRequests();
+      res.json(requests);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/token-requests/:id/approve", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const requests = await storage.getTokenRequests();
+      const request = requests.find(r => r.id === id);
+      
+      if (!request) return res.status(404).json({ error: "Request not found" });
+      if (request.status !== "PENDING") return res.status(400).json({ error: "Request already processed" });
+
+      const asset = await storage.getAsset(request.assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (asset.remainingSupply < request.amount) {
+        return res.status(400).json({ error: "Insufficient remaining supply" });
+      }
+
+      const costBasis = (parseFloat(asset.navPrice) * request.amount).toFixed(2);
+      let token = await storage.getTokenByAssetAndUser(request.assetId, request.userId);
+      if (token) {
+        const existingCostBasis = parseFloat(token.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(costBasis)).toFixed(2);
+        await storage.updateTokenCostBasis(token.id, newCostBasis, token.amount + request.amount);
+      } else {
+        await storage.createToken(request.assetId, request.userId, request.amount, costBasis);
+      }
+
+      await storage.updateAssetRemainingSupply(asset.id, asset.remainingSupply - request.amount);
+      await storage.updateTokenRequestStatus(id, "APPROVED");
+
+      await storage.createTransfer({
+        assetId: request.assetId,
+        fromUserId: null,
+        toUserId: request.userId,
+        tokenAmount: request.amount,
+        reason: "MINT",
+      });
+
+      await storage.createNotification(
+        request.userId,
+        "TOKEN_REQUEST",
+        "Token Request Approved",
+        `Your request for ${request.amount} tokens of ${asset.title} has been approved. The tokens are now in your portfolio.`
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/token-requests/:id/reject", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { notes } = req.body;
+      const requests = await storage.getTokenRequests();
+      const request = requests.find(r => r.id === id);
+      
+      if (!request) return res.status(404).json({ error: "Request not found" });
+      if (request.status !== "PENDING") return res.status(400).json({ error: "Request already processed" });
+
+      await storage.updateTokenRequestStatus(id, "REJECTED", notes);
+
+      const asset = await storage.getAsset(request.assetId);
+      await storage.createNotification(
+        request.userId,
+        "TOKEN_REQUEST",
+        "Token Request Rejected",
+        `Your request for ${request.amount} tokens of ${asset?.title || "Unknown Asset"} has been rejected.${notes ? ` Reason: ${notes}` : ""}`
+      );
+
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
