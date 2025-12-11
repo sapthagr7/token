@@ -30,6 +30,9 @@ export const assets = pgTable("assets", {
   totalSupply: integer("total_supply").notNull(),
   remainingSupply: integer("remaining_supply").notNull(),
   navPrice: decimal("nav_price", { precision: 18, scale: 2 }).notNull(),
+  minimumInvestment: decimal("minimum_investment", { precision: 18, scale: 2 }).default("100"),
+  lockInPeriodDays: integer("lock_in_period_days").default(0),
+  expectedReturnPercent: decimal("expected_return_percent", { precision: 5, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -197,6 +200,9 @@ export const insertAssetSchema = createInsertSchema(assets, {
   // Override drizzle-zod defaults to accept numbers from forms
   totalSupply: z.coerce.number().int().positive("Supply must be positive"),
   navPrice: z.coerce.number().positive("Price must be positive"),
+  minimumInvestment: z.coerce.number().nonnegative("Minimum investment must be 0 or greater").optional(),
+  lockInPeriodDays: z.coerce.number().int().nonnegative("Lock-in period must be 0 or greater").optional(),
+  expectedReturnPercent: z.coerce.number().nonnegative("Expected return must be 0 or greater").optional(),
 }).omit({
   id: true,
   createdAt: true,

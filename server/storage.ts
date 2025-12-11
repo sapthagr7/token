@@ -151,6 +151,9 @@ export class DatabaseStorage implements IStorage {
         totalSupply: assetData.totalSupply,
         remainingSupply: assetData.totalSupply,
         navPrice: assetData.navPrice.toString(),
+        minimumInvestment: assetData.minimumInvestment?.toString() ?? "100",
+        lockInPeriodDays: assetData.lockInPeriodDays ?? 0,
+        expectedReturnPercent: assetData.expectedReturnPercent?.toString() ?? "0",
       })
       .returning();
     

@@ -58,6 +58,9 @@ const createAssetSchema = z.object({
   description: z.string().optional(),
   totalSupply: z.coerce.number().int().positive("Supply must be positive"),
   navPrice: z.coerce.number().positive("Price must be positive"),
+  minimumInvestment: z.coerce.number().nonnegative("Minimum investment must be 0 or greater").optional(),
+  lockInPeriodDays: z.coerce.number().int().nonnegative("Lock-in period must be 0 or greater").optional(),
+  expectedReturnPercent: z.coerce.number().nonnegative("Expected return must be 0 or greater").optional(),
 });
 
 type CreateAssetForm = z.infer<typeof createAssetSchema>;
@@ -78,6 +81,9 @@ export default function AdminAssetsPage() {
       description: "",
       totalSupply: 1000,
       navPrice: 100,
+      minimumInvestment: 100,
+      lockInPeriodDays: 0,
+      expectedReturnPercent: 0,
     },
   });
 
@@ -230,6 +236,68 @@ export default function AdminAssetsPage() {
                           />
                         </FormControl>
                         <FormDescription>Price per token</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="minimumInvestment"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Min Investment ($)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="1"
+                            min={0}
+                            data-testid="input-min-investment"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="lockInPeriodDays"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Lock-in (days)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="1"
+                            min={0}
+                            data-testid="input-lock-in-days"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="expectedReturnPercent"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Expected Return (%)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min={0}
+                            data-testid="input-expected-return"
+                            {...field}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

@@ -17,6 +17,10 @@ import {
   BarChart3,
   Send,
   Package,
+  DollarSign,
+  Lock,
+  Percent,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -502,36 +506,66 @@ export default function MarketplacePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {marketData.map((data) => {
               const Icon = assetIcons[data.asset.type];
+              const tokenValue = parseFloat(data.asset.navPrice);
+              const minInvestment = data.asset.minimumInvestment ? parseFloat(data.asset.minimumInvestment) : 100;
+              const lockInDays = data.asset.lockInPeriodDays ?? 0;
+              const expectedReturn = data.asset.expectedReturnPercent ? parseFloat(data.asset.expectedReturnPercent) : 0;
+              
               return (
-                <Card key={data.assetId} className="hover-elevate cursor-pointer" onClick={() => setSelectedAssetForChart(data.assetId === selectedAssetForChart ? null : data.assetId)}>
-                  <CardContent className="pt-4">
+                <Card key={data.assetId} className="hover-elevate cursor-pointer" onClick={() => setSelectedAssetForChart(data.assetId === selectedAssetForChart ? null : data.assetId)} data-testid={`market-card-${data.assetId}`}>
+                  <CardHeader className="pb-2">
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <div className="rounded-md bg-muted p-2">
                           <Icon className="h-4 w-4 text-muted-foreground" />
                         </div>
                         <div>
-                          <p className="font-medium text-sm">{data.asset.title}</p>
+                          <CardTitle className="text-base">{data.asset.title}</CardTitle>
                           <div className="flex items-center gap-2 mt-1">
                             <AssetTypeBadge type={data.asset.type} />
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Best Ask</p>
-                        <p className="font-semibold font-mono text-sm">
-                          {data.bestAsk ? `$${parseFloat(data.bestAsk).toFixed(2)}` : "-"}
-                        </p>
-                        {data.lastPrice && (
-                          <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
-                            <TrendingUp className="h-3 w-3" />
-                            Last: ${parseFloat(data.lastPrice).toFixed(2)}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          24h Vol: {data.volume24h.toLocaleString()}
-                        </p>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Token Value</p>
+                          <p className="font-semibold font-mono" data-testid={`token-value-${data.assetId}`}>${tokenValue.toFixed(2)}</p>
+                        </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Min Investment</p>
+                          <p className="font-semibold font-mono" data-testid={`min-investment-${data.assetId}`}>${minInvestment.toFixed(0)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Lock-in Period</p>
+                          <p className="font-semibold" data-testid={`lock-in-${data.assetId}`}>
+                            {lockInDays === 0 ? "None" : lockInDays >= 365 ? `${Math.floor(lockInDays / 365)}y` : lockInDays >= 30 ? `${Math.floor(lockInDays / 30)}mo` : `${lockInDays}d`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Percent className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Expected Return</p>
+                          <p className="font-semibold text-emerald-600" data-testid={`expected-return-${data.assetId}`}>
+                            {expectedReturn > 0 ? `${expectedReturn.toFixed(1)}%` : "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border-t pt-3 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Best Ask: {data.bestAsk ? `$${parseFloat(data.bestAsk).toFixed(2)}` : "—"}</span>
+                      <span>24h Vol: {data.volume24h.toLocaleString()}</span>
                     </div>
                   </CardContent>
                 </Card>
