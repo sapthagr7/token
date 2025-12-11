@@ -48,7 +48,7 @@ export interface IStorage {
   // Price history
   getPriceHistory(assetId: string, limit?: number): Promise<PriceHistory[]>;
   createPriceHistory(assetId: string, price: string, volume: number, orderId?: string): Promise<PriceHistory>;
-  getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number }[]>;
+  getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number; investorCount: number }[]>;
   
   // KYC Documents
   getKycDocuments(userId: string): Promise<KycDocument[]>;
@@ -476,7 +476,7 @@ export class DatabaseStorage implements IStorage {
     return record;
   }
 
-  async getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number }[]> {
+  async getAssetMarketData(): Promise<{ assetId: string; asset: Asset; bestBid: string | null; bestAsk: string | null; lastPrice: string | null; volume24h: number; investorCount: number }[]> {
     const allAssets = await this.getAllAssets();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -509,6 +509,12 @@ export class DatabaseStorage implements IStorage {
             sql`${priceHistory.timestamp} > ${oneDayAgo}`
           ));
 
+        // Get unique investor count (users with tokens > 0 for this asset)
+        const [investorResult] = await db
+          .select({ count: sql<number>`count(distinct ${tokens.ownerId})::int` })
+          .from(tokens)
+          .where(and(eq(tokens.assetId, asset.id), sql`${tokens.amount} > 0`));
+
         return {
           assetId: asset.id,
           asset,
@@ -516,6 +522,7 @@ export class DatabaseStorage implements IStorage {
           bestAsk,
           lastPrice: lastTrade?.price || null,
           volume24h: volumeResult?.total || 0,
+          investorCount: investorResult?.count || 0,
         };
       })
     );

@@ -21,6 +21,8 @@ import {
   Lock,
   Percent,
   Clock,
+  Users,
+  Coins,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,6 +63,7 @@ interface MarketData {
   bestAsk: string | null;
   lastPrice: string | null;
   volume24h: number;
+  investorCount: number;
 }
 
 type OrderWithDetails = Order & { seller: User; asset: Asset };
@@ -559,6 +562,26 @@ export default function MarketplacePage() {
                           <p className="text-xs text-muted-foreground">Expected Return</p>
                           <p className="font-semibold text-emerald-600" data-testid={`expected-return-${data.assetId}`}>
                             {expectedReturn > 0 ? `${expectedReturn.toFixed(1)}%` : "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm border-t pt-3">
+                      <div className="flex items-center gap-2">
+                        <Coins className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Tokens Sold / Total</p>
+                          <p className="font-semibold font-mono" data-testid={`tokens-sold-${data.assetId}`}>
+                            {(data.asset.totalSupply - data.asset.remainingSupply).toLocaleString()} / {data.asset.totalSupply.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Investors</p>
+                          <p className="font-semibold" data-testid={`investor-count-${data.assetId}`}>
+                            {data.investorCount.toLocaleString()}
                           </p>
                         </div>
                       </div>
