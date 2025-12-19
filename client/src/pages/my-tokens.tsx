@@ -1,5 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Building2,
   Wheat,
@@ -8,12 +12,34 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  DollarSign,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AssetTypeBadge } from "@/components/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuthStore } from "@/lib/auth-store";
 import type { Token, Asset, NavHistory } from "@shared/schema";
 import {
   LineChart,
@@ -26,6 +52,13 @@ import {
 import { format } from "date-fns";
 
 type TokenWithAsset = Token & { asset: Asset };
+
+const sellOrderSchema = z.object({
+  tokenAmount: z.number().min(1, "Must sell at least 1 token"),
+  pricePerToken: z.number().min(0.01, "Price must be at least $0.01"),
+});
+
+type SellOrderForm = z.infer<typeof sellOrderSchema>;
 
 const assetIcons = {
   real_estate: Building2,
@@ -132,9 +165,66 @@ function TokenHistoryChart({ assetId }: { assetId: string }) {
 }
 
 export default function MyTokensPage() {
+  const { user } = useAuthStore();
+  const { toast } = useToast();
+  const [sellDialogOpen, setSellDialogOpen] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<TokenWithAsset | null>(null);
+
   const { data: portfolio, isLoading } = useQuery<TokenWithAsset[]>({
     queryKey: ["/api/tokens/my-portfolio"],
   });
+
+  const form = useForm<SellOrderForm>({
+    resolver: zodResolver(sellOrderSchema),
+    defaultValues: {
+      tokenAmount: 1,
+      pricePerToken: 0,
+    },
+  });
+
+  const createOrderMutation = useMutation({
+    mutationFn: async (data: { assetId: string; tokenAmount: number; pricePerToken: number }) => {
+      return await apiRequest("POST", "/api/marketplace/order", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/my-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tokens/my-portfolio"] });
+      setSellDialogOpen(false);
+      setSelectedToken(null);
+      form.reset();
+      toast({
+        title: "Sell order created",
+        description: "Your sell order has been submitted and is pending admin approval.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to create sell order",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSellClick = (token: TokenWithAsset) => {
+    setSelectedToken(token);
+    form.setValue("tokenAmount", 1);
+    form.setValue("pricePerToken", parseFloat(token.asset.navPrice));
+    setSellDialogOpen(true);
+  };
+
+  const onSubmitSellOrder = (data: SellOrderForm) => {
+    if (!selectedToken) return;
+    createOrderMutation.mutate({
+      assetId: selectedToken.assetId,
+      tokenAmount: data.tokenAmount,
+      pricePerToken: data.pricePerToken,
+    });
+  };
+
+  const kycApproved = user?.kycStatus === "APPROVED";
+  const isFrozen = user?.isFrozen;
 
   if (isLoading) {
     return (
@@ -214,9 +304,21 @@ export default function MyTokensPage() {
                         </CardDescription>
                       </div>
                     </div>
-                    {token.frozen && (
-                      <Badge variant="destructive">Frozen</Badge>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {token.frozen && (
+                        <Badge variant="destructive">Frozen</Badge>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSellClick(token)}
+                        disabled={!kycApproved || isFrozen || token.frozen || token.amount === 0}
+                        data-testid={`button-sell-token-${token.id}`}
+                      >
+                        <DollarSign className="h-4 w-4 mr-1" />
+                        Sell
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -257,6 +359,108 @@ export default function MyTokensPage() {
           })}
         </div>
       )}
+
+      {/* Sell Dialog */}
+      <Dialog open={sellDialogOpen} onOpenChange={setSellDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sell Tokens</DialogTitle>
+            <DialogDescription>
+              Create a sell order for {selectedToken?.asset.title}. Your order will be reviewed by an admin before becoming visible on the marketplace.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmitSellOrder)} className="space-y-4">
+              <div className="rounded-lg bg-muted p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Available Tokens:</span>
+                  <span className="font-mono font-medium">{selectedToken?.amount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Current NAV:</span>
+                  <span className="font-mono">${parseFloat(selectedToken?.asset.navPrice || "0").toFixed(2)}/token</span>
+                </div>
+              </div>
+
+              <FormField
+                control={form.control}
+                name="tokenAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Number of Tokens to Sell</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={selectedToken?.amount || 1}
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                        data-testid="input-sell-token-amount"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="pricePerToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Price Per Token ($)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0.01}
+                        {...field}
+                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                        data-testid="input-sell-price-per-token"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="rounded-lg bg-muted p-4">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Order Value:</span>
+                  <span className="font-mono font-semibold">
+                    ${(form.watch("tokenAmount") * form.watch("pricePerToken")).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSellDialogOpen(false)}
+                  data-testid="button-cancel-sell"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createOrderMutation.isPending || form.watch("tokenAmount") > (selectedToken?.amount || 0)}
+                  data-testid="button-confirm-sell"
+                >
+                  {createOrderMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Sell Order"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
