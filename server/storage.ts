@@ -1,7 +1,7 @@
 import { 
-  users, assets, tokens, orders, transfers, priceHistory, kycDocuments, navHistory, notifications, tokenRequests,
+  users, assets, tokens, orders, transfers, priceHistory, kycDocuments, navHistory, notifications, tokenRequests, purchaseRequests,
   type User, type InsertUser, type Asset, type InsertAsset,
-  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory, type Notification, type TokenRequest, type InsertTokenRequest
+  type Token, type Order, type InsertOrder, type Transfer, type PriceHistory, type KycDocument, type NavHistory, type Notification, type TokenRequest, type InsertTokenRequest, type PurchaseRequest, type InsertPurchaseRequest, type PurchaseRequestWithDetails
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql } from "drizzle-orm";
@@ -82,6 +82,14 @@ export interface IStorage {
   getPendingTokenRequests(): Promise<(TokenRequest & { user: User; asset: Asset })[]>;
   createTokenRequest(request: InsertTokenRequest): Promise<TokenRequest>;
   updateTokenRequestStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", adminNotes?: string): Promise<TokenRequest | undefined>;
+  
+  // Purchase Requests
+  getPurchaseRequest(id: string): Promise<PurchaseRequest | undefined>;
+  getPurchaseRequests(userId?: string): Promise<PurchaseRequestWithDetails[]>;
+  getPendingPurchaseRequests(): Promise<PurchaseRequestWithDetails[]>;
+  createPurchaseRequest(buyerId: string, orderId: string, quantity: number, totalPrice: string): Promise<PurchaseRequest>;
+  updatePurchaseRequestStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", adminNotes?: string): Promise<PurchaseRequest | undefined>;
+  updateOrderTokenAmount(id: string, tokenAmount: number): Promise<Order | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -744,6 +752,105 @@ export class DatabaseStorage implements IStorage {
       .where(eq(tokenRequests.id, id))
       .returning();
     return tokenRequest || undefined;
+  }
+
+  // Purchase Request methods
+  async getPurchaseRequest(id: string): Promise<PurchaseRequest | undefined> {
+    const [request] = await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, id));
+    return request || undefined;
+  }
+
+  async getPurchaseRequests(userId?: string): Promise<PurchaseRequestWithDetails[]> {
+    const result = await db
+      .select()
+      .from(purchaseRequests)
+      .innerJoin(users, eq(purchaseRequests.buyerId, users.id))
+      .innerJoin(orders, eq(purchaseRequests.orderId, orders.id))
+      .innerJoin(assets, eq(orders.assetId, assets.id))
+      .orderBy(desc(purchaseRequests.createdAt));
+
+    const filteredResult = userId 
+      ? result.filter(row => row.purchase_requests.buyerId === userId)
+      : result;
+
+    const enriched = await Promise.all(
+      filteredResult.map(async (row) => {
+        const seller = await this.getUser(row.orders.sellerId);
+        return {
+          ...row.purchase_requests,
+          buyer: row.users,
+          order: {
+            ...row.orders,
+            asset: row.assets,
+            seller: seller!,
+          },
+        };
+      })
+    );
+    return enriched;
+  }
+
+  async getPendingPurchaseRequests(): Promise<PurchaseRequestWithDetails[]> {
+    const result = await db
+      .select()
+      .from(purchaseRequests)
+      .innerJoin(users, eq(purchaseRequests.buyerId, users.id))
+      .innerJoin(orders, eq(purchaseRequests.orderId, orders.id))
+      .innerJoin(assets, eq(orders.assetId, assets.id))
+      .where(eq(purchaseRequests.status, "PENDING"))
+      .orderBy(desc(purchaseRequests.createdAt));
+
+    const enriched = await Promise.all(
+      result.map(async (row) => {
+        const seller = await this.getUser(row.orders.sellerId);
+        return {
+          ...row.purchase_requests,
+          buyer: row.users,
+          order: {
+            ...row.orders,
+            asset: row.assets,
+            seller: seller!,
+          },
+        };
+      })
+    );
+    return enriched;
+  }
+
+  async createPurchaseRequest(buyerId: string, orderId: string, quantity: number, totalPrice: string): Promise<PurchaseRequest> {
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({
+        buyerId,
+        orderId,
+        quantity,
+        totalPrice,
+        status: "PENDING",
+      })
+      .returning();
+    return request;
+  }
+
+  async updatePurchaseRequestStatus(id: string, status: "PENDING" | "APPROVED" | "REJECTED", adminNotes?: string): Promise<PurchaseRequest | undefined> {
+    const [request] = await db
+      .update(purchaseRequests)
+      .set({ 
+        status, 
+        adminNotes: adminNotes || null,
+        resolvedAt: new Date()
+      })
+      .where(eq(purchaseRequests.id, id))
+      .returning();
+    return request || undefined;
+  }
+
+  async updateOrderTokenAmount(id: string, tokenAmount: number): Promise<Order | undefined> {
+    const [order] = await db
+      .update(orders)
+      .set({ tokenAmount })
+      .where(eq(orders.id, id))
+      .returning();
+    return order || undefined;
   }
 }
 
