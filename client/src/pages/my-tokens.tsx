@@ -54,8 +54,8 @@ import { format } from "date-fns";
 type TokenWithAsset = Token & { asset: Asset };
 
 const sellOrderSchema = z.object({
-  tokenAmount: z.number().min(1, "Must sell at least 1 token"),
-  pricePerToken: z.number().min(0.01, "Price must be at least $0.01"),
+  tokenAmount: z.coerce.number().int("Must be a whole number").min(1, "Must sell at least 1 token"),
+  pricePerToken: z.coerce.number().min(0.01, "Price must be at least $0.01"),
 });
 
 type SellOrderForm = z.infer<typeof sellOrderSchema>;
@@ -216,6 +216,22 @@ export default function MyTokensPage() {
 
   const onSubmitSellOrder = (data: SellOrderForm) => {
     if (!selectedToken) return;
+    if (data.tokenAmount > selectedToken.amount) {
+      toast({
+        title: "Invalid amount",
+        description: `You only have ${selectedToken.amount} tokens available to sell.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (data.tokenAmount <= 0 || data.pricePerToken <= 0) {
+      toast({
+        title: "Invalid values",
+        description: "Token amount and price must be greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
     createOrderMutation.mutate({
       assetId: selectedToken.assetId,
       tokenAmount: data.tokenAmount,
@@ -361,7 +377,13 @@ export default function MyTokensPage() {
       )}
 
       {/* Sell Dialog */}
-      <Dialog open={sellDialogOpen} onOpenChange={setSellDialogOpen}>
+      <Dialog open={sellDialogOpen} onOpenChange={(open) => {
+        setSellDialogOpen(open);
+        if (!open) {
+          setSelectedToken(null);
+          form.reset();
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Sell Tokens</DialogTitle>
