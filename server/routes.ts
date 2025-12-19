@@ -405,15 +405,22 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/marketplace/order/:id/fill", authMiddleware(storage), kycApprovedMiddleware, async (req: AuthenticatedRequest, res) => {
+  // Submit a purchase request (requires admin approval)
+  app.post("/api/marketplace/order/:id/buy-request", authMiddleware(storage), kycApprovedMiddleware, async (req: AuthenticatedRequest, res) => {
     try {
       if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
+      const { quantity } = req.body;
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({ error: "Quantity must be a positive number" });
+      }
 
       const order = await storage.getOrder(req.params.id);
       if (!order) return res.status(404).json({ error: "Order not found" });
       if (order.status !== "OPEN") return res.status(400).json({ error: "Order is not open" });
       if (order.approvalStatus !== "APPROVED") return res.status(400).json({ error: "Order is pending admin approval" });
       if (order.sellerId === req.user.id) return res.status(400).json({ error: "Cannot buy your own order" });
+      if (quantity > order.tokenAmount) return res.status(400).json({ error: `Quantity exceeds available tokens (${order.tokenAmount})` });
 
       const seller = await storage.getUser(order.sellerId);
       if (!seller) return res.status(400).json({ error: "Seller not found" });
@@ -421,55 +428,36 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Seller is not eligible for this trade" });
       }
 
-      let buyerToken = await storage.getTokenByAssetAndUser(order.assetId, req.user.id);
-      const tradeCostBasis = (parseFloat(order.pricePerToken) * order.tokenAmount).toFixed(2);
-      if (buyerToken) {
-        const existingCostBasis = parseFloat(buyerToken.costBasis) || 0;
-        const newCostBasis = (existingCostBasis + parseFloat(tradeCostBasis)).toFixed(2);
-        await storage.updateTokenCostBasis(buyerToken.id, newCostBasis, buyerToken.amount + order.tokenAmount);
-      } else {
-        await storage.createToken(order.assetId, req.user.id, order.tokenAmount, tradeCostBasis);
-      }
-
-      await storage.updateOrderStatus(order.id, "FILLED", req.user.id);
-
-      await storage.createTransfer({
-        assetId: order.assetId,
-        fromUserId: order.sellerId,
-        toUserId: req.user.id,
-        tokenAmount: order.tokenAmount,
-        reason: "TRADE",
-      });
-
-      // Record price history for charts
-      await storage.createPriceHistory(
-        order.assetId,
-        order.pricePerToken,
-        order.tokenAmount,
-        order.id
-      );
+      const totalPrice = (parseFloat(order.pricePerToken) * quantity).toFixed(2);
+      const purchaseRequest = await storage.createPurchaseRequest(req.user.id, order.id, quantity, totalPrice);
 
       // Get asset info for notifications
       const asset = await storage.getAsset(order.assetId);
       const assetTitle = asset?.title || "Unknown Asset";
 
-      // Notify seller
-      await storage.createNotification(
-        order.sellerId,
-        "ORDER_FILLED",
-        "Order Filled",
-        `Your sell order for ${order.tokenAmount} tokens of ${assetTitle} has been filled at $${order.pricePerToken} per token.`
-      );
+      // Notify admins
+      const admins = await storage.getAllUsers();
+      for (const admin of admins.filter(u => u.role === "ADMIN")) {
+        await storage.createNotification(
+          admin.id,
+          "ORDER_APPROVAL",
+          "New Purchase Request",
+          `${req.user.name} wants to buy ${quantity} tokens of ${assetTitle} at $${order.pricePerToken}/token. Total: $${totalPrice}. Please review.`
+        );
+      }
 
-      // Notify buyer
-      await storage.createNotification(
-        req.user.id,
-        "ORDER_FILLED",
-        "Purchase Complete",
-        `You have purchased ${order.tokenAmount} tokens of ${assetTitle} at $${order.pricePerToken} per token.`
-      );
+      res.status(201).json(purchaseRequest);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
-      res.json({ success: true });
+  // Get user's purchase requests
+  app.get("/api/marketplace/my-purchase-requests", authMiddleware(storage), async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+      const requests = await storage.getPurchaseRequests(req.user.id);
+      res.json(requests);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -588,6 +576,124 @@ export async function registerRoutes(
         "ORDER_APPROVAL",
         "Sell Order Rejected",
         `Your sell order for ${order.tokenAmount} tokens of ${asset?.title || "Unknown Asset"} has been rejected. Your tokens have been returned.`
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Get pending purchase requests
+  app.get("/api/admin/purchase-requests", authMiddleware(storage), adminMiddleware, async (req, res) => {
+    try {
+      const requests = await storage.getPendingPurchaseRequests();
+      res.json(requests);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Approve purchase request
+  app.post("/api/admin/purchase-requests/:id/approve", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const purchaseRequest = await storage.getPurchaseRequest(req.params.id);
+      if (!purchaseRequest) return res.status(404).json({ error: "Purchase request not found" });
+      if (purchaseRequest.status !== "PENDING") return res.status(400).json({ error: "Request is not pending" });
+
+      const order = await storage.getOrder(purchaseRequest.orderId);
+      if (!order) return res.status(404).json({ error: "Order not found" });
+      if (order.status !== "OPEN") return res.status(400).json({ error: "Order is no longer open" });
+      if (purchaseRequest.quantity > order.tokenAmount) {
+        return res.status(400).json({ error: "Quantity exceeds available tokens" });
+      }
+
+      const buyer = await storage.getUser(purchaseRequest.buyerId);
+      if (!buyer) return res.status(400).json({ error: "Buyer not found" });
+
+      const asset = await storage.getAsset(order.assetId);
+      const assetTitle = asset?.title || "Unknown Asset";
+
+      // Update buyer's tokens
+      let buyerToken = await storage.getTokenByAssetAndUser(order.assetId, purchaseRequest.buyerId);
+      const tradeCostBasis = purchaseRequest.totalPrice;
+      if (buyerToken) {
+        const existingCostBasis = parseFloat(buyerToken.costBasis) || 0;
+        const newCostBasis = (existingCostBasis + parseFloat(tradeCostBasis)).toFixed(2);
+        await storage.updateTokenCostBasis(buyerToken.id, newCostBasis, buyerToken.amount + purchaseRequest.quantity);
+      } else {
+        await storage.createToken(order.assetId, purchaseRequest.buyerId, purchaseRequest.quantity, tradeCostBasis);
+      }
+
+      // Create transfer record
+      await storage.createTransfer({
+        assetId: order.assetId,
+        fromUserId: order.sellerId,
+        toUserId: purchaseRequest.buyerId,
+        tokenAmount: purchaseRequest.quantity,
+        reason: "TRADE",
+      });
+
+      // Record price history
+      await storage.createPriceHistory(
+        order.assetId,
+        order.pricePerToken,
+        purchaseRequest.quantity,
+        order.id
+      );
+
+      // Update order - reduce token amount or mark as filled
+      const remainingTokens = order.tokenAmount - purchaseRequest.quantity;
+      if (remainingTokens === 0) {
+        await storage.updateOrderStatus(order.id, "FILLED", purchaseRequest.buyerId);
+      } else {
+        await storage.updateOrderTokenAmount(order.id, remainingTokens);
+      }
+
+      // Update purchase request status
+      await storage.updatePurchaseRequestStatus(purchaseRequest.id, "APPROVED", req.body.adminNotes);
+
+      // Notify seller
+      await storage.createNotification(
+        order.sellerId,
+        "ORDER_FILLED",
+        remainingTokens === 0 ? "Order Fully Filled" : "Partial Order Filled",
+        `${purchaseRequest.quantity} tokens of ${assetTitle} sold at $${order.pricePerToken}/token. Total: $${tradeCostBasis}${remainingTokens > 0 ? `. ${remainingTokens} tokens remaining.` : '.'}`
+      );
+
+      // Notify buyer
+      await storage.createNotification(
+        purchaseRequest.buyerId,
+        "ORDER_FILLED",
+        "Purchase Approved",
+        `Your purchase of ${purchaseRequest.quantity} tokens of ${assetTitle} at $${order.pricePerToken}/token has been approved. Total: $${tradeCostBasis}.`
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin: Reject purchase request
+  app.post("/api/admin/purchase-requests/:id/reject", authMiddleware(storage), adminMiddleware, async (req: AuthenticatedRequest, res) => {
+    try {
+      const purchaseRequest = await storage.getPurchaseRequest(req.params.id);
+      if (!purchaseRequest) return res.status(404).json({ error: "Purchase request not found" });
+      if (purchaseRequest.status !== "PENDING") return res.status(400).json({ error: "Request is not pending" });
+
+      await storage.updatePurchaseRequestStatus(purchaseRequest.id, "REJECTED", req.body.adminNotes);
+
+      const order = await storage.getOrder(purchaseRequest.orderId);
+      const asset = order ? await storage.getAsset(order.assetId) : null;
+      const assetTitle = asset?.title || "Unknown Asset";
+
+      // Notify buyer
+      await storage.createNotification(
+        purchaseRequest.buyerId,
+        "ORDER_APPROVAL",
+        "Purchase Rejected",
+        `Your purchase request for ${purchaseRequest.quantity} tokens of ${assetTitle} has been rejected.${req.body.adminNotes ? ` Reason: ${req.body.adminNotes}` : ''}`
       );
 
       res.json({ success: true });
