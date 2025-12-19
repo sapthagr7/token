@@ -102,6 +102,20 @@ interface TokenRequest {
   asset: Asset;
 }
 
+interface PurchaseRequest {
+  id: string;
+  buyerId: string;
+  orderId: string;
+  quantity: number;
+  totalPrice: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  buyer: User;
+  order: OrderWithDetails;
+}
+
 export default function MarketplacePage() {
   const { user } = useAuthStore();
   const { toast } = useToast();
@@ -109,6 +123,7 @@ export default function MarketplacePage() {
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null);
+  const [buyQuantity, setBuyQuantity] = useState(1);
 
   const { data: openOrders, isLoading: ordersLoading } = useQuery<OrderWithDetails[]>({
     queryKey: ["/api/marketplace/orders"],
@@ -132,6 +147,10 @@ export default function MarketplacePage() {
 
   const { data: myTokenRequests, isLoading: tokenRequestsLoading } = useQuery<TokenRequest[]>({
     queryKey: ["/api/marketplace/my-token-requests"],
+  });
+
+  const { data: myPurchaseRequests, isLoading: purchaseRequestsLoading } = useQuery<PurchaseRequest[]>({
+    queryKey: ["/api/marketplace/my-purchase-requests"],
   });
 
   const [selectedAssetForChart, setSelectedAssetForChart] = useState<string | null>(null);
@@ -177,24 +196,25 @@ export default function MarketplacePage() {
     },
   });
 
-  const fillOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      return await apiRequest("POST", `/api/marketplace/order/${orderId}/fill`, {});
+  const buyRequestMutation = useMutation({
+    mutationFn: async ({ orderId, quantity }: { orderId: string; quantity: number }) => {
+      return await apiRequest("POST", `/api/marketplace/order/${orderId}/buy-request`, { quantity });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/marketplace/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/marketplace/my-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tokens/my-portfolio"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/my-purchase-requests"] });
       setBuyDialogOpen(false);
       setSelectedOrder(null);
+      setBuyQuantity(1);
       toast({
-        title: "Order filled",
-        description: "Tokens have been transferred to your portfolio.",
+        title: "Purchase request submitted",
+        description: "Your purchase request is pending admin approval.",
       });
     },
     onError: (error: Error) => {
       toast({
-        title: "Failed to fill order",
+        title: "Failed to submit purchase request",
         description: error.message,
         variant: "destructive",
       });
@@ -255,12 +275,13 @@ export default function MarketplacePage() {
 
   const handleBuyClick = (order: OrderWithDetails) => {
     setSelectedOrder(order);
+    setBuyQuantity(1);
     setBuyDialogOpen(true);
   };
 
   const handleConfirmBuy = () => {
     if (selectedOrder) {
-      fillOrderMutation.mutate(selectedOrder.id);
+      buyRequestMutation.mutate({ orderId: selectedOrder.id, quantity: buyQuantity });
     }
   };
 
@@ -269,6 +290,7 @@ export default function MarketplacePage() {
   const tokens = myTokens || [];
   const assets = allAssets || [];
   const tokenRequests = myTokenRequests || [];
+  const purchaseRequests = myPurchaseRequests || [];
   const kycApproved = user?.kycStatus === "APPROVED";
   const isFrozen = user?.isFrozen;
 
@@ -614,6 +636,9 @@ export default function MarketplacePage() {
           <TabsTrigger value="my-orders" data-testid="tab-my-orders">
             My Orders
           </TabsTrigger>
+          <TabsTrigger value="my-purchases" data-testid="tab-my-purchases">
+            My Purchases
+          </TabsTrigger>
           <TabsTrigger value="my-requests" data-testid="tab-my-requests">
             My Requests
           </TabsTrigger>
@@ -758,6 +783,67 @@ export default function MarketplacePage() {
           )}
         </TabsContent>
 
+        <TabsContent value="my-purchases" className="space-y-6">
+          {purchaseRequestsLoading ? (
+            <TableSkeleton rows={5} />
+          ) : purchaseRequests.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-muted p-4 mb-4">
+                    <ShoppingCart className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-1">No purchase requests yet</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm">
+                    Browse orders and submit purchase requests to buy tokens from other investors.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {purchaseRequests.map((request) => {
+                const asset = request.order?.asset;
+                const Icon = asset ? assetIcons[asset.type] : Building;
+
+                return (
+                  <Card key={request.id} data-testid={`purchase-request-${request.id}`}>
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="flex items-center gap-4">
+                          <div className="rounded-md bg-muted p-2">
+                            <Icon className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium">{asset?.title || "Unknown Asset"}</p>
+                              <TokenRequestStatusBadge status={request.status} />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {request.quantity} tokens at ${parseFloat(request.order?.pricePerToken || "0").toFixed(2)}/token
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-mono font-semibold">${parseFloat(request.totalPrice).toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(request.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      {request.adminNotes && request.status === "REJECTED" && (
+                        <div className="mt-4 p-3 rounded-md bg-destructive/10 text-sm text-destructive">
+                          <strong>Reason:</strong> {request.adminNotes}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="my-requests" className="space-y-6">
           {tokenRequestsLoading ? (
             <TableSkeleton rows={5} />
@@ -815,9 +901,9 @@ export default function MarketplacePage() {
       <Dialog open={buyDialogOpen} onOpenChange={setBuyDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Purchase</DialogTitle>
+            <DialogTitle>Purchase Tokens</DialogTitle>
             <DialogDescription>
-              You are about to purchase tokens from another investor
+              Submit a purchase request for tokens. An admin will review and approve.
             </DialogDescription>
           </DialogHeader>
           {selectedOrder && (
@@ -828,22 +914,38 @@ export default function MarketplacePage() {
                   <span className="font-medium">{selectedOrder.asset.title}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tokens</span>
+                  <span className="text-muted-foreground">Available Tokens</span>
                   <span className="font-mono font-medium">{selectedOrder.tokenAmount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Price per Token</span>
                   <span className="font-mono font-medium">${parseFloat(selectedOrder.pricePerToken).toFixed(2)}</span>
                 </div>
-                <div className="border-t pt-3 flex justify-between">
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Quantity to Purchase</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={selectedOrder.tokenAmount}
+                  value={buyQuantity}
+                  onChange={(e) => setBuyQuantity(Math.max(1, Math.min(selectedOrder.tokenAmount, parseInt(e.target.value) || 1)))}
+                  data-testid="input-buy-quantity"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Maximum: {selectedOrder.tokenAmount} tokens
+                </p>
+              </div>
+              <div className="rounded-lg bg-muted p-4">
+                <div className="flex justify-between">
                   <span className="font-medium">Total Cost</span>
                   <span className="font-mono font-semibold">
-                    ${(selectedOrder.tokenAmount * parseFloat(selectedOrder.pricePerToken)).toFixed(2)}
+                    ${(buyQuantity * parseFloat(selectedOrder.pricePerToken)).toFixed(2)}
                   </span>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                By confirming, the tokens will be transferred to your portfolio.
+                Your request will be reviewed by an admin before the tokens are transferred.
               </p>
             </div>
           )}
@@ -853,16 +955,16 @@ export default function MarketplacePage() {
             </Button>
             <Button
               onClick={handleConfirmBuy}
-              disabled={fillOrderMutation.isPending}
+              disabled={buyRequestMutation.isPending || !selectedOrder || buyQuantity < 1 || buyQuantity > (selectedOrder?.tokenAmount || 0)}
               data-testid="button-confirm-buy"
             >
-              {fillOrderMutation.isPending ? (
+              {buyRequestMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing...
+                  Submitting...
                 </>
               ) : (
-                "Confirm Purchase"
+                "Submit Purchase Request"
               )}
             </Button>
           </DialogFooter>
