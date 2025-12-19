@@ -696,6 +696,16 @@ export async function registerRoutes(
         `Your purchase request for ${purchaseRequest.quantity} tokens of ${assetTitle} has been rejected.${req.body.adminNotes ? ` Reason: ${req.body.adminNotes}` : ''}`
       );
 
+      // Notify seller about the failed sale
+      if (order) {
+        await storage.createNotification(
+          order.sellerId,
+          "ORDER_APPROVAL",
+          "Purchase Request Rejected",
+          `A purchase request for ${purchaseRequest.quantity} tokens of ${assetTitle} was rejected. Your order remains open.`
+        );
+      }
+
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

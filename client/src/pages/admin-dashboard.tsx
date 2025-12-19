@@ -50,6 +50,20 @@ interface TokenRequest {
   user: User;
 }
 
+interface PurchaseRequest {
+  id: string;
+  buyerId: string;
+  orderId: string;
+  quantity: number;
+  totalPrice: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  adminNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  buyer: User;
+  order: OrderWithDetails;
+}
+
 export default function AdminDashboard() {
   const { user } = useAuthStore();
   const { toast } = useToast();
@@ -77,6 +91,10 @@ export default function AdminDashboard() {
 
   const { data: pendingTokenRequests } = useQuery<TokenRequest[]>({
     queryKey: ["/api/admin/token-requests"],
+  });
+
+  const { data: pendingPurchaseRequests } = useQuery<PurchaseRequest[]>({
+    queryKey: ["/api/admin/purchase-requests"],
   });
 
   const approveOrderMutation = useMutation({
@@ -133,6 +151,34 @@ export default function AdminDashboard() {
     },
   });
 
+  const approvePurchaseRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      return await apiRequest("POST", `/api/admin/purchase-requests/${requestId}/approve`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/purchase-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Purchase approved", description: "Tokens have been transferred to the buyer." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to approve purchase", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const rejectPurchaseRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      return await apiRequest("POST", `/api/admin/purchase-requests/${requestId}/reject`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/purchase-requests"] });
+      toast({ title: "Purchase rejected", description: "The purchase request has been rejected." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to reject purchase", description: error.message, variant: "destructive" });
+    },
+  });
+
   if (statsLoading || usersLoading || transfersLoading) {
     return <DashboardSkeleton />;
   }
@@ -141,6 +187,7 @@ export default function AdminDashboard() {
   const transfers = recentTransfers || [];
   const ordersToApprove = pendingOrders || [];
   const tokenRequestsToProcess = (pendingTokenRequests || []).filter(r => r.status === "PENDING");
+  const purchaseRequestsToProcess = (pendingPurchaseRequests || []).filter(r => r.status === "PENDING");
 
   return (
     <div className="space-y-8">
@@ -443,6 +490,77 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Purchase Requests */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
+          <div>
+            <CardTitle className="text-lg">Purchase Requests</CardTitle>
+            <CardDescription>Users requesting to buy tokens from marketplace</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {purchaseRequestsToProcess.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="rounded-full bg-emerald-100 dark:bg-emerald-950/50 p-4 mb-4">
+                <ShoppingCart className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h3 className="text-lg font-semibold mb-1">No pending purchases</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                All purchase requests have been processed.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {purchaseRequestsToProcess.slice(0, 10).map((request) => (
+                <div
+                  key={request.id}
+                  className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/50"
+                  data-testid={`pending-purchase-${request.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate">{request.order?.asset?.title || "Unknown Asset"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {request.quantity} tokens at ${parseFloat(request.order?.pricePerToken || "0").toFixed(2)}/token
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Buyer: {request.buyer?.name || "Unknown"} | Total: ${parseFloat(request.totalPrice).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => approvePurchaseRequestMutation.mutate(request.id)}
+                      disabled={approvePurchaseRequestMutation.isPending}
+                      data-testid={`button-approve-purchase-${request.id}`}
+                    >
+                      {approvePurchaseRequestMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => rejectPurchaseRequestMutation.mutate(request.id)}
+                      disabled={rejectPurchaseRequestMutation.isPending}
+                      data-testid={`button-reject-purchase-${request.id}`}
+                    >
+                      {rejectPurchaseRequestMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-600" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
