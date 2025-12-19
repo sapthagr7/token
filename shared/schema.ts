@@ -175,6 +175,25 @@ export const tokenRequestsRelations = relations(tokenRequests, ({ one }) => ({
   asset: one(assets, { fields: [tokenRequests.assetId], references: [assets.id] }),
 }));
 
+export const purchaseRequestStatusEnum = pgEnum("purchase_request_status", ["PENDING", "APPROVED", "REJECTED"]);
+
+export const purchaseRequests = pgTable("purchase_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  buyerId: varchar("buyer_id").notNull().references(() => users.id),
+  orderId: varchar("order_id").notNull().references(() => orders.id),
+  quantity: integer("quantity").notNull(),
+  totalPrice: decimal("total_price", { precision: 18, scale: 2 }).notNull(),
+  status: purchaseRequestStatusEnum("status").notNull().default("PENDING"),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+export const purchaseRequestsRelations = relations(purchaseRequests, ({ one }) => ({
+  buyer: one(users, { fields: [purchaseRequests.buyerId], references: [users.id] }),
+  order: one(orders, { fields: [purchaseRequests.orderId], references: [orders.id] }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -225,6 +244,17 @@ export const insertTokenRequestSchema = createInsertSchema(tokenRequests).omit({
   resolvedAt: true,
 });
 
+export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests, {
+  quantity: z.coerce.number().int().positive("Quantity must be positive"),
+  totalPrice: z.coerce.number().positive("Total price must be positive"),
+}).omit({
+  id: true,
+  status: true,
+  adminNotes: true,
+  createdAt: true,
+  resolvedAt: true,
+});
+
 export const mintTokensSchema = z.object({
   assetId: z.string(),
   userId: z.string(),
@@ -252,9 +282,12 @@ export type NavHistory = typeof navHistory.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type TokenRequest = typeof tokenRequests.$inferSelect;
 export type InsertTokenRequest = z.infer<typeof insertTokenRequestSchema>;
+export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
+export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
 
 export type UserWithTokens = User & { tokens: (Token & { asset: Asset })[] };
 export type OrderWithDetails = Order & { seller: User; buyer?: User; asset: Asset };
 export type TransferWithDetails = Transfer & { asset: Asset; fromUser?: User; toUser?: User };
 export type PriceHistoryWithAsset = PriceHistory & { asset: Asset };
 export type TokenRequestWithDetails = TokenRequest & { user: User; asset: Asset };
+export type PurchaseRequestWithDetails = PurchaseRequest & { buyer: User; order: Order & { asset: Asset; seller: User } };
