@@ -9,6 +9,7 @@ services:
   - type: web
     name: rwa-token-app
     env: node
+    nodeVersion: 20
     plan: free  # Change to starter ($7/month) or higher for production
     buildCommand: npm install && npm run build
     startCommand: npm start
