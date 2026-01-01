@@ -1,6 +1,6 @@
 services:
   # PostgreSQL Database
-  - type: pg
+  - type: postgres
     name: rwa-token-db
     plan: free  # Change to starter ($7/month) or higher for production
     databaseName: rwa_token
