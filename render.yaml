@@ -1,11 +1,10 @@
-services:
-  # PostgreSQL Database
-  - type: postgres
-    name: rwa-token-db
-    plan: free  # Change to starter ($7/month) or higher for production
+databases:
+  - name: rwa-token-db
+    plan: free
     databaseName: rwa_token
     user: rwa_token_user
 
+services:
   # Web Service (Backend + Frontend)
   - type: web
     name: rwa-token-app
@@ -23,4 +22,3 @@ services:
       - key: SESSION_SECRET
         generateValue: true
     healthCheckPath: /
-
